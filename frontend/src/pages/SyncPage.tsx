@@ -4,7 +4,6 @@ import {
   Typography,
   Paper,
   Button,
-  TextField,
   Alert,
   CircularProgress,
   Card,
@@ -14,58 +13,46 @@ import {
   Step,
   StepLabel,
   Stack,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableRow,
 } from '@mui/material';
 import {
-  Sync as SyncIcon,
+  CloudUpload as UploadIcon,
   CheckCircle as CheckCircleIcon,
-  Login as LoginIcon,
+  Description as FileIcon,
 } from '@mui/icons-material';
 import { apiService } from '../services/api';
-import { useMsal } from '@azure/msal-react';
-import { loginRequest } from '../config/authConfig';
 
 const SyncPage: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
-  const [userEmail, setUserEmail] = useState('');
-  const [daysBack, setDaysBack] = useState('7');
   const [activeStep, setActiveStep] = useState(0);
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [importResult, setImportResult] = useState<any>(null);
 
-  const { instance, accounts } = useMsal();
+  const steps = ['Select CSV File', 'Importing Data', 'Complete'];
 
-  const steps = ['Sign In', 'Enter Details', 'Syncing Data', 'Complete'];
-
-  const handleLogin = async () => {
-    try {
-      setLoading(true);
-      setError(null);
-
-      await instance.loginPopup(loginRequest);
-
-      if (accounts.length > 0) {
-        setIsAuthenticated(true);
-        setUserEmail(accounts[0].username);
-        setActiveStep(1);
-        setSuccess('Successfully signed in with Microsoft');
+  const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (file) {
+      if (!file.name.endsWith('.csv')) {
+        setError('Please select a CSV file');
+        return;
       }
-    } catch (err: any) {
-      setError(err.message || 'Failed to sign in');
-    } finally {
-      setLoading(false);
+      setSelectedFile(file);
+      setError(null);
+      setActiveStep(0);
     }
   };
 
-  const handleSync = async () => {
-    if (!userEmail.trim()) {
-      setError('Please enter your Microsoft 365 email');
-      return;
-    }
-
-    if (!isAuthenticated || accounts.length === 0) {
-      setError('Please sign in first');
-      setActiveStep(0);
+  const handleImport = async () => {
+    if (!selectedFile) {
+      setError('Please select a CSV file');
       return;
     }
 
@@ -73,26 +60,19 @@ const SyncPage: React.FC = () => {
       setLoading(true);
       setError(null);
       setSuccess(null);
-      setActiveStep(2);
-
-      // Get access token from MSAL
-      const response = await instance.acquireTokenSilent({
-        ...loginRequest,
-        account: accounts[0],
-      });
-
-      // Sync with user's access token
-      await apiService.syncRecentAttendance({
-        user_id: userEmail,
-        days_back: parseInt(daysBack) || 7,
-        access_token: response.accessToken,
-      });
-
-      setSuccess(`Successfully synced attendance data for the last ${daysBack} days!`);
-      setActiveStep(3);
-    } catch (err: any) {
-      setError(err.response?.data?.message || err.message || 'Failed to sync data');
       setActiveStep(1);
+
+      const formData = new FormData();
+      formData.append('file', selectedFile);
+
+      const response = await apiService.importAttendanceCSV(formData);
+
+      setImportResult(response.data);
+      setSuccess(response.message);
+      setActiveStep(2);
+    } catch (err: any) {
+      setError(err.response?.data?.message || err.message || 'Failed to import CSV');
+      setActiveStep(0);
     } finally {
       setLoading(false);
     }
@@ -102,21 +82,23 @@ const SyncPage: React.FC = () => {
     setActiveStep(0);
     setSuccess(null);
     setError(null);
+    setSelectedFile(null);
+    setImportResult(null);
   };
 
   return (
     <Box>
       <Typography variant="h4" gutterBottom fontWeight="bold">
-        Sync Attendance Data
+        Import Attendance Data
       </Typography>
       <Typography variant="body1" color="textSecondary" paragraph>
-        Pull attendance data from Microsoft Teams meetings
+        Upload CSV file with attendance data from IT department
       </Typography>
 
       <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' }, gap: 3 }}>
         <Paper elevation={2} sx={{ p: 3 }}>
           <Typography variant="h6" gutterBottom>
-            Sync Configuration
+            CSV File Import
           </Typography>
 
           <Stepper activeStep={activeStep} sx={{ mb: 3 }}>
@@ -140,86 +122,130 @@ const SyncPage: React.FC = () => {
           )}
 
           {activeStep === 0 && (
-            <Box textAlign="center" py={4}>
-              <LoginIcon sx={{ fontSize: 80, color: 'primary.main', mb: 2 }} />
-              <Typography variant="h6" gutterBottom>
-                Sign in with Microsoft
-              </Typography>
-              <Typography variant="body2" color="textSecondary" sx={{ mb: 3 }}>
-                Sign in with your school Microsoft 365 account to access your Teams meetings
-              </Typography>
+            <Box>
+              <input
+                accept=".csv"
+                style={{ display: 'none' }}
+                id="csv-file-upload"
+                type="file"
+                onChange={handleFileSelect}
+              />
+              <label htmlFor="csv-file-upload">
+                <Button
+                  variant="outlined"
+                  component="span"
+                  startIcon={<UploadIcon />}
+                  fullWidth
+                  size="large"
+                  sx={{ mb: 2 }}
+                >
+                  Select CSV File
+                </Button>
+              </label>
+
+              {selectedFile && (
+                <Alert severity="info" icon={<FileIcon />} sx={{ mb: 2 }}>
+                  <strong>Selected file:</strong> {selectedFile.name} (
+                  {(selectedFile.size / 1024).toFixed(2)} KB)
+                </Alert>
+              )}
+
               <Button
                 variant="contained"
                 size="large"
-                startIcon={<LoginIcon />}
-                onClick={handleLogin}
-                disabled={loading}
+                startIcon={<UploadIcon />}
+                onClick={handleImport}
+                disabled={!selectedFile || loading}
                 fullWidth
               >
-                {loading ? 'Signing in...' : 'Sign in with Microsoft'}
+                {loading ? 'Importing...' : 'Import Attendance Data'}
               </Button>
             </Box>
           )}
 
           {activeStep === 1 && (
-            <Stack spacing={2}>
-              <Alert severity="info" sx={{ mb: 2 }}>
-                Signed in as: <strong>{userEmail}</strong>
-              </Alert>
-              <TextField
-                fullWidth
-                label="Your Microsoft 365 Email"
-                value={userEmail}
-                onChange={(e) => setUserEmail(e.target.value)}
-                required
-                helperText="Confirm your email address"
-              />
-              <TextField
-                fullWidth
-                label="Days to Sync"
-                type="number"
-                value={daysBack}
-                onChange={(e) => setDaysBack(e.target.value)}
-                inputProps={{ min: 1, max: 30 }}
-                helperText="Number of days back to sync (1-30)"
-              />
-              <Button
-                variant="contained"
-                size="large"
-                startIcon={<SyncIcon />}
-                onClick={handleSync}
-                disabled={loading}
-                fullWidth
-              >
-                {loading ? 'Syncing...' : 'Sync Attendance'}
-              </Button>
-            </Stack>
-          )}
-
-          {activeStep === 2 && (
             <Box textAlign="center" py={4}>
               <CircularProgress size={60} />
               <Typography variant="h6" sx={{ mt: 2 }}>
-                Syncing data from Teams...
+                Importing attendance data...
               </Typography>
               <Typography variant="body2" color="textSecondary" sx={{ mt: 1 }}>
-                This may take a few moments
+                Processing CSV file and creating records
               </Typography>
               <LinearProgress sx={{ mt: 3 }} />
             </Box>
           )}
 
-          {activeStep === 3 && (
-            <Box textAlign="center" py={4}>
-              <CheckCircleIcon color="success" sx={{ fontSize: 80 }} />
-              <Typography variant="h6" sx={{ mt: 2 }}>
-                Sync Complete!
-              </Typography>
-              <Typography variant="body2" color="textSecondary" sx={{ mt: 1, mb: 3 }}>
-                {success}
-              </Typography>
-              <Button variant="outlined" onClick={handleReset}>
-                Sync Again
+          {activeStep === 2 && importResult && (
+            <Box>
+              <Box textAlign="center" py={2}>
+                <CheckCircleIcon color="success" sx={{ fontSize: 80 }} />
+                <Typography variant="h6" sx={{ mt: 2 }}>
+                  Import Complete!
+                </Typography>
+              </Box>
+
+              <TableContainer>
+                <Table size="small">
+                  <TableBody>
+                    <TableRow>
+                      <TableCell>
+                        <strong>Meetings Created:</strong>
+                      </TableCell>
+                      <TableCell align="right">{importResult.meetings}</TableCell>
+                    </TableRow>
+                    <TableRow>
+                      <TableCell>
+                        <strong>Students Created:</strong>
+                      </TableCell>
+                      <TableCell align="right">{importResult.students}</TableCell>
+                    </TableRow>
+                    <TableRow>
+                      <TableCell>
+                        <strong>Attendance Records Imported:</strong>
+                      </TableCell>
+                      <TableCell align="right">{importResult.imported}</TableCell>
+                    </TableRow>
+                    <TableRow>
+                      <TableCell>
+                        <strong>Records Skipped (duplicates):</strong>
+                      </TableCell>
+                      <TableCell align="right">{importResult.skipped}</TableCell>
+                    </TableRow>
+                    {importResult.errors && importResult.errors.length > 0 && (
+                      <TableRow>
+                        <TableCell>
+                          <strong>Errors:</strong>
+                        </TableCell>
+                        <TableCell align="right">{importResult.errors.length}</TableCell>
+                      </TableRow>
+                    )}
+                  </TableBody>
+                </Table>
+              </TableContainer>
+
+              {importResult.errors && importResult.errors.length > 0 && (
+                <Alert severity="warning" sx={{ mt: 2 }}>
+                  <Typography variant="body2" fontWeight="bold" gutterBottom>
+                    Import completed with errors:
+                  </Typography>
+                  <Box component="ul" sx={{ pl: 2, mt: 1, mb: 0 }}>
+                    {importResult.errors.slice(0, 5).map((err: string, idx: number) => (
+                      <Typography component="li" variant="caption" key={idx}>
+                        {err}
+                      </Typography>
+                    ))}
+                    {importResult.errors.length > 5 && (
+                      <Typography component="li" variant="caption">
+                        ... and {importResult.errors.length - 5} more
+                      </Typography>
+                    )}
+                  </Box>
+                </Alert>
+              )}
+
+              <Button variant="outlined" onClick={handleReset} fullWidth sx={{ mt: 3 }}>
+                Import Another File
               </Button>
             </Box>
           )}
@@ -233,42 +259,66 @@ const SyncPage: React.FC = () => {
               </Typography>
               <Box component="ol" sx={{ pl: 2 }}>
                 <Typography component="li" variant="body2" paragraph>
-                  <strong>Enter your email:</strong> Use the Microsoft 365 email address
-                  that has access to the Teams meetings
+                  <strong>Get CSV from IT:</strong> Request the attendance CSV file from your IT
+                  department (generated via Azure runbook)
                 </Typography>
                 <Typography component="li" variant="body2" paragraph>
-                  <strong>Choose date range:</strong> Select how many days back you want to
-                  sync (up to 30 days)
+                  <strong>Select the file:</strong> Click "Select CSV File" and choose the
+                  downloaded CSV
                 </Typography>
                 <Typography component="li" variant="body2" paragraph>
-                  <strong>Click Sync:</strong> The app will fetch all meetings and attendance
-                  records from Microsoft Teams
+                  <strong>Import data:</strong> Click "Import Attendance Data" to process the CSV
                 </Typography>
                 <Typography component="li" variant="body2" paragraph>
-                  <strong>View data:</strong> Once complete, view students, meetings, and
-                  attendance reports in the dashboard
+                  <strong>View results:</strong> The app will create meetings, students, and
+                  attendance records automatically
                 </Typography>
+              </Box>
+            </CardContent>
+          </Card>
+
+          <Card elevation={2} sx={{ mb: 2 }}>
+            <CardContent>
+              <Typography variant="h6" gutterBottom>
+                Expected CSV Format
+              </Typography>
+              <Typography variant="body2" paragraph>
+                The CSV file should contain the following columns:
+              </Typography>
+              <Box
+                component="code"
+                sx={{
+                  display: 'block',
+                  p: 2,
+                  bgcolor: 'grey.100',
+                  borderRadius: 1,
+                  fontSize: '0.75rem',
+                  overflowX: 'auto',
+                }}
+              >
+                meeting_id, meeting_title, meeting_start, meeting_end, student_email, student_name,
+                join_time, leave_time, duration_minutes
               </Box>
             </CardContent>
           </Card>
 
           <Card elevation={2}>
             <CardContent>
-              <Typography variant="h6" gutterBottom color="warning.main">
+              <Typography variant="h6" gutterBottom color="info.main">
                 Important Notes
               </Typography>
               <Box component="ul" sx={{ pl: 2 }}>
                 <Typography component="li" variant="body2" paragraph>
-                  Ensure your Azure AD app has proper permissions configured
+                  CSV files must be provided by your IT department
                 </Typography>
                 <Typography component="li" variant="body2" paragraph>
-                  Only meetings with attendance reports will be synced
+                  Duplicate records (same meeting, student, join time) will be skipped
                 </Typography>
                 <Typography component="li" variant="body2" paragraph>
-                  The first sync may take longer depending on the number of meetings
+                  The import process will automatically create new meetings and students
                 </Typography>
                 <Typography component="li" variant="body2" paragraph>
-                  Students will be automatically created from meeting participants
+                  You can import multiple CSV files to update attendance data
                 </Typography>
               </Box>
             </CardContent>

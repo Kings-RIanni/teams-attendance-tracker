@@ -1,7 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import { AttendanceRecordModel } from '../models/AttendanceRecord';
-import { attendanceService } from '../services/attendance.service';
-import { graphService } from '../services/graph.service';
+import { csvImportService } from '../services/csv-import.service';
 import logger from '../config/logger';
 import { z } from 'zod';
 import { AttendanceStatus } from '../types';
@@ -22,11 +21,6 @@ const attendanceReportFilterSchema = z.object({
   start_date: z.string().datetime().optional(),
   end_date: z.string().datetime().optional(),
   status: z.enum(['present', 'late', 'absent', 'partial']).optional(),
-});
-
-const syncRecentSchema = z.object({
-  user_id: z.string().email(),
-  days_back: z.number().int().positive().max(30).optional(),
 });
 
 /**
@@ -245,46 +239,47 @@ export const getAttendanceReport = async (
 };
 
 /**
- * Sync recent meetings attendance from Teams
- * DELEGATED PERMISSIONS - requires user access token from frontend
+ * Import attendance data from CSV file
+ * OPTION 1 - CSV import from IT-provided files
  */
-export const syncRecentAttendance = async (
+export const importAttendanceCSV = async (
   req: Request,
   res: Response,
   next: NextFunction
 ): Promise<void> => {
   try {
-    const { user_id, days_back, access_token } = req.body;
-
-    // Validate required fields
-    if (!user_id || !access_token) {
+    if (!req.file) {
       res.status(400).json({
         success: false,
-        message: 'user_id and access_token are required',
+        message: 'CSV file is required',
       });
       return;
     }
 
-    // Initialize Graph service with user's access token
-    await graphService.initialize(access_token);
+    // Read file content
+    const fileContent = req.file.buffer.toString('utf-8');
 
-    // Sync recent meetings using delegated permissions
-    await attendanceService.syncRecentMeetings(user_id, days_back || 7);
+    // Import CSV data
+    const result = await csvImportService.importFromCSV(fileContent);
+
+    if (result.errors.length > 0) {
+      logger.warn(`CSV import completed with ${result.errors.length} errors`);
+    }
 
     res.json({
       success: true,
-      message: `Successfully synced attendance for the last ${days_back || 7} days`,
+      message: `Successfully imported ${result.imported} attendance records`,
+      data: {
+        imported: result.imported,
+        skipped: result.skipped,
+        meetings: result.meetings,
+        students: result.students,
+        attendance: result.attendance,
+        errors: result.errors,
+      },
     });
   } catch (error) {
-    if (error instanceof z.ZodError) {
-      res.status(400).json({
-        success: false,
-        message: 'Validation error',
-        errors: error.errors,
-      });
-      return;
-    }
-    logger.error('Error in syncRecentAttendance:', error);
+    logger.error('Error in importAttendanceCSV:', error);
     next(error);
   }
 };

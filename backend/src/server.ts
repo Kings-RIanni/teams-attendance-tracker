@@ -66,56 +66,54 @@ app.get('/health', (req, res) => {
   });
 });
 
-// Authentication routes
-app.get('/auth/login', async (req, res, next) => {
-  try {
-    const authUrl = await getAuthUrl();
-    res.json({
-      success: true,
-      authUrl,
-    });
-  } catch (error) {
-    logger.error('Error getting auth URL:', error);
-    next(error);
-  }
-});
+// Authentication routes - DISABLED for Option 1 (CSV Import Mode)
+// No authentication required when using CSV import
+// app.get('/auth/login', async (req, res, next) => {
+//   try {
+//     const authUrl = await getAuthUrl();
+//     res.json({
+//       success: true,
+//       authUrl,
+//     });
+//   } catch (error) {
+//     logger.error('Error getting auth URL:', error);
+//     next(error);
+//   }
+// });
 
-app.get('/auth/callback', async (req, res, next) => {
-  try {
-    const { code } = req.query;
+// app.get('/auth/callback', async (req, res, next) => {
+//   try {
+//     const { code } = req.query;
+//
+//     if (!code || typeof code !== 'string') {
+//       res.status(400).json({
+//         success: false,
+//         message: 'Authorization code is required',
+//       });
+//       return;
+//     }
+//
+//     const tokenResponse = await acquireTokenByCode(code);
+//
+//     // In a real app, you'd create a session or JWT here
+//     res.json({
+//       success: true,
+//       message: 'Authentication successful',
+//       account: tokenResponse.account,
+//     });
+//   } catch (error) {
+//     logger.error('Error in auth callback:', error);
+//     next(error);
+//   }
+// });
 
-    if (!code || typeof code !== 'string') {
-      res.status(400).json({
-        success: false,
-        message: 'Authorization code is required',
-      });
-      return;
-    }
-
-    const tokenResponse = await acquireTokenByCode(code);
-
-    // Initialize Graph service
-    await graphService.initialize();
-
-    // In a real app, you'd create a session or JWT here
-    res.json({
-      success: true,
-      message: 'Authentication successful',
-      account: tokenResponse.account,
-    });
-  } catch (error) {
-    logger.error('Error in auth callback:', error);
-    next(error);
-  }
-});
-
-app.post('/auth/logout', (req, res) => {
-  // Clear session/tokens
-  res.json({
-    success: true,
-    message: 'Logged out successfully',
-  });
-});
+// app.post('/auth/logout', (req, res) => {
+//   // Clear session/tokens
+//   res.json({
+//     success: true,
+//     message: 'Logged out successfully',
+//   });
+// });
 
 // API routes
 app.use('/api/students', optionalAuth, studentsRoutes);
@@ -150,10 +148,8 @@ app.use(errorHandler);
 // Start server
 const startServer = async () => {
   try {
-    // Initialize Graph service
-    logger.info('Initializing Microsoft Graph service...');
-    await graphService.initialize();
-    logger.info('Graph service initialized successfully');
+    // Option 1: No Graph service initialization required
+    logger.info('Starting server in CSV Import mode...');
 
     app.listen(PORT, () => {
       logger.info(`🚀 Server running on port ${PORT}`);

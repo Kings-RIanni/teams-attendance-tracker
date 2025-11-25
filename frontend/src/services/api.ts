@@ -137,8 +137,13 @@ class ApiService {
     return response.data.data;
   }
 
-  async syncRecentAttendance(request: SyncRequest & { access_token: string }): Promise<void> {
-    await this.client.post('/attendance/sync', request);
+  async importAttendanceCSV(formData: FormData): Promise<any> {
+    const response = await this.client.post('/attendance/import', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    });
+    return response.data;
   }
 
   async exportAttendanceCSV(filters: {

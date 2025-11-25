@@ -4,30 +4,28 @@ A full-stack application for tracking student attendance in Microsoft Teams meet
 
 ## Features
 
-- Automated attendance data sync from Microsoft Teams
-- Real-time attendance tracking with join/leave times
+- Import attendance data from CSV files (provided by IT department)
+- Track student attendance with join/leave times
 - Student management system
 - Comprehensive reporting and analytics
-- Export attendance data (CSV, Excel)
+- Export attendance data to CSV
 - Dashboard with visualizations
-- Role-based access control
+- Automated duplicate detection
 
 ## Tech Stack
 
 ### Frontend
 - React 18 with TypeScript
-- Material-UI (MUI)
-- React Query for data fetching
-- MSAL React for authentication
+- Material-UI (MUI) v7
+- Axios for API requests
 - Recharts for data visualization
 
 ### Backend
 - Node.js with Express
 - TypeScript
-- Microsoft Graph API integration
-- MSAL Node for authentication
+- CSV parsing with csv-parse
+- Multer for file uploads
 - PostgreSQL database
-- node-cron for scheduled tasks
 
 ### Database
 - PostgreSQL 14+
@@ -67,41 +65,31 @@ attendance-tracker/
 
 - Node.js 18+ and npm
 - PostgreSQL 14+
-- Microsoft 365 account with admin access
-- Azure AD application registration
+- CSV files from your IT department containing Teams attendance data
 
-## Azure AD Setup
+## Implementation Options
 
-1. Go to [Azure Portal](https://portal.azure.com)
-2. Navigate to Azure Active Directory > App registrations
-3. Click "New registration"
-4. Name: "Teams Attendance Tracker"
-5. Supported account types: "Accounts in this organizational directory only"
-6. Redirect URI: `http://localhost:3001/auth/callback`
-7. Click "Register"
+This application supports **Option 1: IT-Managed CSV Import**
 
-### Configure API Permissions
+### Option 1: IT-Managed CSV Import (Current Setup)
 
-1. Go to "API permissions" in your app
-2. Add the following Microsoft Graph permissions:
-   - **Delegated permissions**:
-     - `OnlineMeetings.Read`
-     - `OnlineMeetings.ReadWrite`
-     - `Calendars.Read`
-     - `User.Read`
-     - `User.ReadBasic.All`
-   - **Application permissions**:
-     - `OnlineMeetings.Read.All`
-     - `CallRecords.Read.All`
-     - `User.Read.All`
-3. Click "Grant admin consent"
+In this mode:
+- Your IT department sets up an Azure runbook to export attendance data
+- The runbook generates CSV files automatically (daily/weekly)
+- You download the CSV files and import them into the app
+- No Azure AD credentials needed on your end
 
-### Create Client Secret
+**To set this up:**
+1. Send the [IT Request Document](./docs/IT_REQUEST_SIMPLE.md) to your IT department
+2. IT department follows the [detailed runbook guide](./docs/OPTION1_IT_RUNBOOK.md)
+3. Once set up, you'll receive CSV files via SharePoint or email
+4. Import CSV files using the app's import feature
 
-1. Go to "Certificates & secrets"
-2. Click "New client secret"
-3. Add description and set expiration
-4. Copy the secret value (you won't see it again!)
+**Advantages:**
+- No Azure AD access required for you
+- IT maintains full control over credentials
+- Secure and compliant with school policies
+- Automated data extraction on IT's schedule
 
 ## Installation
 
@@ -140,15 +128,8 @@ Edit `.env` with your values:
 NODE_ENV=development
 PORT=3001
 DATABASE_URL=postgresql://username:password@localhost:5432/attendance_tracker
-
-# Azure AD
-AZURE_CLIENT_ID=your-client-id
-AZURE_CLIENT_SECRET=your-client-secret
-AZURE_TENANT_ID=your-tenant-id
-REDIRECT_URI=http://localhost:3001/auth/callback
-
-# JWT
-JWT_SECRET=generate-a-secure-random-string
+CORS_ORIGIN=http://localhost:3000
+LOG_LEVEL=debug
 ```
 
 #### Frontend (.env)
@@ -162,9 +143,6 @@ Edit `.env`:
 
 ```env
 REACT_APP_API_URL=http://localhost:3001/api
-REACT_APP_AZURE_CLIENT_ID=your-client-id
-REACT_APP_AZURE_TENANT_ID=your-tenant-id
-REACT_APP_REDIRECT_URI=http://localhost:3000
 ```
 
 ### 4. Install dependencies
@@ -236,22 +214,35 @@ See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for deployment instructions.
 
 **Backend**: ✅ Complete
 - REST API with TypeScript and Express
-- Microsoft Graph API integration
+- CSV import service with duplicate detection
 - PostgreSQL database with migrations
 - Full CRUD operations for Students, Meetings, Attendance
-- CSV export functionality
-- Authentication middleware
+- CSV export and import functionality
+- File upload with Multer
 - Comprehensive error handling
 
-**Frontend**: 🚧 In Progress
-- React 18 with TypeScript initialized
-- Dependencies installed (Material-UI, MSAL, Axios, Recharts)
-- Ready for component development
+**Frontend**: ✅ Complete
+- React 18 with TypeScript
+- Material-UI v7 components
+- Dashboard with charts and statistics
+- Student management (CRUD operations)
+- Meeting list and reports
+- CSV import interface
+- CSV export with filtering
 
 **Database**: ✅ Complete
 - Migration scripts ready
 - Optimized indexes
 - Referential integrity configured
+
+## Usage
+
+1. **Request CSV from IT**: Contact your IT department and request attendance CSV files
+2. **Import CSV**: Go to the "Sync" page and upload the CSV file
+3. **View Dashboard**: See attendance statistics and charts
+4. **Manage Students**: Add, edit, or remove students
+5. **View Reports**: Filter and export attendance reports
+6. **Export Data**: Download filtered attendance data as CSV
 
 ## Contributing
 

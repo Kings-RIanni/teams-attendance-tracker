@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import multer from 'multer';
 import {
   getAllAttendanceRecords,
   getAttendanceRecordById,
@@ -6,9 +7,24 @@ import {
   updateAttendanceRecord,
   deleteAttendanceRecord,
   getAttendanceReport,
-  syncRecentAttendance,
+  importAttendanceCSV,
   exportAttendanceCSV,
 } from '../controllers/attendance.controller';
+
+// Configure multer for file uploads
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 10 * 1024 * 1024, // 10MB limit
+  },
+  fileFilter: (req, file, cb) => {
+    if (file.mimetype === 'text/csv' || file.originalname.endsWith('.csv')) {
+      cb(null, true);
+    } else {
+      cb(new Error('Only CSV files are allowed'));
+    }
+  },
+});
 
 const router = Router();
 
@@ -48,11 +64,11 @@ router.get('/:id', getAttendanceRecordById);
 router.post('/', createAttendanceRecord);
 
 /**
- * @route   POST /api/attendance/sync
- * @desc    Sync recent attendance from Teams
+ * @route   POST /api/attendance/import
+ * @desc    Import attendance data from CSV file
  * @access  Private
  */
-router.post('/sync', syncRecentAttendance);
+router.post('/import', upload.single('file'), importAttendanceCSV);
 
 /**
  * @route   PUT /api/attendance/:id
