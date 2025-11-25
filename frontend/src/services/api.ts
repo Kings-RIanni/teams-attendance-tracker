@@ -137,7 +137,7 @@ class ApiService {
     return response.data.data;
   }
 
-  async syncRecentAttendance(request: SyncRequest): Promise<void> {
+  async syncRecentAttendance(request: SyncRequest & { access_token: string }): Promise<void> {
     await this.client.post('/attendance/sync', request);
   }
 

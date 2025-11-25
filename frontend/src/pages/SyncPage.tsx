@@ -18,8 +18,11 @@ import {
 import {
   Sync as SyncIcon,
   CheckCircle as CheckCircleIcon,
+  Login as LoginIcon,
 } from '@mui/icons-material';
 import { apiService } from '../services/api';
+import { useMsal } from '@azure/msal-react';
+import { loginRequest } from '../config/authConfig';
 
 const SyncPage: React.FC = () => {
   const [loading, setLoading] = useState(false);
@@ -28,8 +31,31 @@ const SyncPage: React.FC = () => {
   const [userEmail, setUserEmail] = useState('');
   const [daysBack, setDaysBack] = useState('7');
   const [activeStep, setActiveStep] = useState(0);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
 
-  const steps = ['Enter Details', 'Syncing Data', 'Complete'];
+  const { instance, accounts } = useMsal();
+
+  const steps = ['Sign In', 'Enter Details', 'Syncing Data', 'Complete'];
+
+  const handleLogin = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+
+      await instance.loginPopup(loginRequest);
+
+      if (accounts.length > 0) {
+        setIsAuthenticated(true);
+        setUserEmail(accounts[0].username);
+        setActiveStep(1);
+        setSuccess('Successfully signed in with Microsoft');
+      }
+    } catch (err: any) {
+      setError(err.message || 'Failed to sign in');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleSync = async () => {
     if (!userEmail.trim()) {
@@ -37,22 +63,36 @@ const SyncPage: React.FC = () => {
       return;
     }
 
+    if (!isAuthenticated || accounts.length === 0) {
+      setError('Please sign in first');
+      setActiveStep(0);
+      return;
+    }
+
     try {
       setLoading(true);
       setError(null);
       setSuccess(null);
-      setActiveStep(1);
+      setActiveStep(2);
 
+      // Get access token from MSAL
+      const response = await instance.acquireTokenSilent({
+        ...loginRequest,
+        account: accounts[0],
+      });
+
+      // Sync with user's access token
       await apiService.syncRecentAttendance({
         user_id: userEmail,
         days_back: parseInt(daysBack) || 7,
+        access_token: response.accessToken,
       });
 
       setSuccess(`Successfully synced attendance data for the last ${daysBack} days!`);
-      setActiveStep(2);
+      setActiveStep(3);
     } catch (err: any) {
       setError(err.response?.data?.message || err.message || 'Failed to sync data');
-      setActiveStep(0);
+      setActiveStep(1);
     } finally {
       setLoading(false);
     }
@@ -100,15 +140,39 @@ const SyncPage: React.FC = () => {
           )}
 
           {activeStep === 0 && (
+            <Box textAlign="center" py={4}>
+              <LoginIcon sx={{ fontSize: 80, color: 'primary.main', mb: 2 }} />
+              <Typography variant="h6" gutterBottom>
+                Sign in with Microsoft
+              </Typography>
+              <Typography variant="body2" color="textSecondary" sx={{ mb: 3 }}>
+                Sign in with your school Microsoft 365 account to access your Teams meetings
+              </Typography>
+              <Button
+                variant="contained"
+                size="large"
+                startIcon={<LoginIcon />}
+                onClick={handleLogin}
+                disabled={loading}
+                fullWidth
+              >
+                {loading ? 'Signing in...' : 'Sign in with Microsoft'}
+              </Button>
+            </Box>
+          )}
+
+          {activeStep === 1 && (
             <Stack spacing={2}>
+              <Alert severity="info" sx={{ mb: 2 }}>
+                Signed in as: <strong>{userEmail}</strong>
+              </Alert>
               <TextField
                 fullWidth
                 label="Your Microsoft 365 Email"
-                placeholder="user@organization.com"
                 value={userEmail}
                 onChange={(e) => setUserEmail(e.target.value)}
                 required
-                helperText="Enter the email of the meeting organizer or participant"
+                helperText="Confirm your email address"
               />
               <TextField
                 fullWidth
@@ -132,7 +196,7 @@ const SyncPage: React.FC = () => {
             </Stack>
           )}
 
-          {activeStep === 1 && (
+          {activeStep === 2 && (
             <Box textAlign="center" py={4}>
               <CircularProgress size={60} />
               <Typography variant="h6" sx={{ mt: 2 }}>
@@ -145,7 +209,7 @@ const SyncPage: React.FC = () => {
             </Box>
           )}
 
-          {activeStep === 2 && (
+          {activeStep === 3 && (
             <Box textAlign="center" py={4}>
               <CheckCircleIcon color="success" sx={{ fontSize: 80 }} />
               <Typography variant="h6" sx={{ mt: 2 }}>

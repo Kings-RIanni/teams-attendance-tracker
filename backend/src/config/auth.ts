@@ -1,64 +1,42 @@
-import { ConfidentialClientApplication, Configuration } from '@azure/msal-node';
 import dotenv from 'dotenv';
 
 dotenv.config();
 
-const msalConfig: Configuration = {
-  auth: {
-    clientId: process.env.AZURE_CLIENT_ID || '',
-    authority: `https://login.microsoftonline.com/${process.env.AZURE_TENANT_ID}`,
-    clientSecret: process.env.AZURE_CLIENT_SECRET || '',
-  },
-  system: {
-    loggerOptions: {
-      loggerCallback(loglevel, message, containsPii) {
-        if (!containsPii) {
-          console.log(message);
-        }
-      },
-      piiLoggingEnabled: false,
-      logLevel: 3,
-    }
+/**
+ * Auth configuration for DELEGATED PERMISSIONS ONLY
+ *
+ * This version uses tokens provided by the frontend (from user login)
+ * NO CLIENT SECRET NEEDED - uses delegated permissions
+ *
+ * The frontend (React) handles user authentication with MSAL browser
+ * and passes the access token to the backend for API calls.
+ */
+
+export const validateToken = (token: string): boolean => {
+  // Basic validation - check if token exists and looks valid
+  if (!token || token.length < 50) {
+    return false;
   }
+
+  // Check if it's a JWT (has 3 parts separated by dots)
+  const parts = token.split('.');
+  if (parts.length !== 3) {
+    return false;
+  }
+
+  return true;
 };
 
-export const msalClient = new ConfidentialClientApplication(msalConfig);
-
+// For backward compatibility, we keep these exports but they're not used
+// in delegated flow since frontend handles authentication
 export const getAuthUrl = () => {
-  const authCodeUrlParameters = {
-    scopes: [
-      'User.Read',
-      'OnlineMeetings.Read',
-      'OnlineMeetings.ReadWrite',
-      'Calendars.Read',
-      'CallRecords.Read.All'
-    ],
-    redirectUri: process.env.REDIRECT_URI || 'http://localhost:3001/auth/callback',
-  };
-
-  return msalClient.getAuthCodeUrl(authCodeUrlParameters);
+  throw new Error('Auth URL not needed for delegated permissions. Frontend handles authentication.');
 };
 
 export const acquireTokenByCode = async (code: string) => {
-  const tokenRequest = {
-    code,
-    scopes: [
-      'User.Read',
-      'OnlineMeetings.Read',
-      'OnlineMeetings.ReadWrite',
-      'Calendars.Read',
-      'CallRecords.Read.All'
-    ],
-    redirectUri: process.env.REDIRECT_URI || 'http://localhost:3001/auth/callback',
-  };
-
-  return await msalClient.acquireTokenByCode(tokenRequest);
+  throw new Error('Token by code not needed for delegated permissions. Frontend handles authentication.');
 };
 
 export const acquireTokenByClientCredentials = async () => {
-  const clientCredentialRequest = {
-    scopes: ['https://graph.microsoft.com/.default'],
-  };
-
-  return await msalClient.acquireTokenByClientCredential(clientCredentialRequest);
+  throw new Error('Client credentials not used in delegated permissions mode.');
 };

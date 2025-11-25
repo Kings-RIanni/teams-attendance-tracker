@@ -9,25 +9,25 @@ An application to track student attendance in Microsoft Teams meetings, recordin
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│                     Frontend (React)                     │
-│  - Dashboard UI                                          │
-│  - Attendance Reports                                    │
-│  - Student Management                                    │
+│                     Frontend (React)                    │
+│  - Dashboard UI                                         │
+│  - Attendance Reports                                   │
+│  - Student Management                                   │
 └─────────────────────────────────────────────────────────┘
                             ↓ HTTPS/REST API
 ┌─────────────────────────────────────────────────────────┐
-│                  Backend API (Node.js)                   │
-│  - Authentication (Microsoft OAuth 2.0)                  │
-│  - Microsoft Graph API Integration                       │
-│  - Business Logic                                        │
-│  - Data Processing                                       │
+│                  Backend API (Node.js)                  │
+│  - Authentication (Microsoft OAuth 2.0)                 │
+│  - Microsoft Graph API Integration                      │
+│  - Business Logic                                       │
+│  - Data Processing                                      │
 └─────────────────────────────────────────────────────────┘
                             ↓
 ┌─────────────────────────────────────────────────────────┐
-│              Database (PostgreSQL/MongoDB)               │
-│  - Student Records                                       │
-│  - Attendance Logs                                       │
-│  - Meeting Metadata                                      │
+│              Database (PostgreSQL/MongoDB)              │
+│  - Student Records                                      │
+│  - Attendance Logs                                      │
+│  - Meeting Metadata                                     │
 └─────────────────────────────────────────────────────────┘
 ```
 

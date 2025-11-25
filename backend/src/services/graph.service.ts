@@ -1,33 +1,28 @@
 import { Client } from '@microsoft/microsoft-graph-client';
-import { acquireTokenByClientCredentials } from '../config/auth';
 import logger from '../config/logger';
 import { GraphMeeting, GraphAttendanceRecord } from '../types';
+import { validateToken } from '../config/auth';
 
 /**
- * Microsoft Graph API Service
- * Handles all interactions with Microsoft Graph API for Teams data
+ * Microsoft Graph API Service - DELEGATED PERMISSIONS
+ *
+ * Uses access tokens provided from frontend (user login)
+ * NO client secrets or application permissions required
  */
 export class GraphService {
-  private client: Client | null = null;
+  private accessToken: string | null = null;
 
   /**
-   * Initialize Graph client with authentication
+   * Initialize Graph client with user access token from frontend
    */
-  async initialize(): Promise<void> {
+  async initialize(userAccessToken: string): Promise<void> {
     try {
-      const tokenResponse = await acquireTokenByClientCredentials();
-
-      if (!tokenResponse || !tokenResponse.accessToken) {
-        throw new Error('Failed to acquire access token');
+      if (!validateToken(userAccessToken)) {
+        throw new Error('Invalid access token provided');
       }
 
-      this.client = Client.init({
-        authProvider: (done) => {
-          done(null, tokenResponse.accessToken);
-        },
-      });
-
-      logger.info('Graph API client initialized successfully');
+      this.accessToken = userAccessToken;
+      logger.info('Graph API client initialized with user token');
     } catch (error) {
       logger.error('Failed to initialize Graph API client', error);
       throw error;
@@ -38,10 +33,15 @@ export class GraphService {
    * Get authenticated Graph client
    */
   private getClient(): Client {
-    if (!this.client) {
-      throw new Error('Graph client not initialized. Call initialize() first.');
+    if (!this.accessToken) {
+      throw new Error('Graph client not initialized. Provide user access token first.');
     }
-    return this.client;
+
+    return Client.init({
+      authProvider: (done) => {
+        done(null, this.accessToken!);
+      },
+    });
   }
 
   /**

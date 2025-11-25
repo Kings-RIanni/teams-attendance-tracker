@@ -17,12 +17,14 @@ export const msalConfig: Configuration = {
 
 /**
  * Scopes you add here will be prompted for user consent during sign-in.
+ * DELEGATED PERMISSIONS ONLY - no admin consent required
  */
 export const loginRequest: PopupRequest = {
   scopes: [
     'User.Read',
     'OnlineMeetings.Read',
     'Calendars.Read',
+    'OnlineMeetingArtifact.Read.All', // For attendance reports
   ],
 };
 

@@ -246,6 +246,7 @@ export const getAttendanceReport = async (
 
 /**
  * Sync recent meetings attendance from Teams
+ * DELEGATED PERMISSIONS - requires user access token from frontend
  */
 export const syncRecentAttendance = async (
   req: Request,
@@ -253,12 +254,21 @@ export const syncRecentAttendance = async (
   next: NextFunction
 ): Promise<void> => {
   try {
-    const { user_id, days_back } = syncRecentSchema.parse(req.body);
+    const { user_id, days_back, access_token } = req.body;
 
-    // Initialize Graph service if not already done
-    await graphService.initialize();
+    // Validate required fields
+    if (!user_id || !access_token) {
+      res.status(400).json({
+        success: false,
+        message: 'user_id and access_token are required',
+      });
+      return;
+    }
 
-    // Sync recent meetings
+    // Initialize Graph service with user's access token
+    await graphService.initialize(access_token);
+
+    // Sync recent meetings using delegated permissions
     await attendanceService.syncRecentMeetings(user_id, days_back || 7);
 
     res.json({
