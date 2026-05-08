@@ -1,303 +1,263 @@
 # Setup Guide - Teams Attendance Tracker
 
-This guide will walk you through setting up the Teams Attendance Tracker desktop application.
+Step-by-step guide to get the Teams Attendance Tracker running on your machine.
 
 ## Prerequisites
 
-Before you begin, ensure you have the following installed:
-
-- **Node.js** 18+ and npm ([Download](https://nodejs.org/))
+- **Node.js** 18+ ([Download](https://nodejs.org/))
 - **PostgreSQL** 14+ ([Download](https://www.postgresql.org/download/))
-- **Microsoft 365 Account** with admin access
-- **Git** ([Download](https://git-scm.com/))
 
-## Step 1: Azure AD Application Registration
+Optional (for roster sync):
+- **Canvas LMS** API access token from your school's Canvas instance
 
-### 1.1 Create Azure AD App
+## Step 1: Database Setup
 
-1. Go to [Azure Portal](https://portal.azure.com)
-2. Navigate to **Azure Active Directory** → **App registrations**
-3. Click **New registration**
-4. Fill in the details:
-   - **Name**: Teams Attendance Tracker
-   - **Supported account types**: Accounts in this organizational directory only
-   - **Redirect URI**: Web → `http://localhost:3001/auth/callback`
-5. Click **Register**
-
-### 1.2 Configure API Permissions
-
-1. In your app, go to **API permissions**
-2. Click **Add a permission** → **Microsoft Graph** → **Delegated permissions**
-3. Add these permissions:
-   - `User.Read`
-   - `OnlineMeetings.Read`
-   - `OnlineMeetings.ReadWrite`
-   - `Calendars.Read`
-   - `User.ReadBasic.All`
-
-4. Click **Add a permission** → **Microsoft Graph** → **Application permissions**
-5. Add these permissions:
-   - `OnlineMeetings.Read.All`
-   - `CallRecords.Read.All`
-   - `User.Read.All`
-
-6. Click **Grant admin consent for [Your Organization]**
-
-### 1.3 Create Client Secret
-
-1. Go to **Certificates & secrets**
-2. Click **New client secret**
-3. Add description: "Desktop App Secret"
-4. Set expiration (recommend 24 months)
-5. Click **Add**
-6. **COPY THE SECRET VALUE** - you won't see it again!
-
-### 1.4 Note Your Credentials
-
-From the **Overview** page, copy:
-- **Application (client) ID**
-- **Directory (tenant) ID**
-
-## Step 2: Database Setup
-
-### 2.1 Create PostgreSQL Database
+### 1.1 Create the Database
 
 ```bash
-# Create database
 createdb attendance_tracker
+```
 
-# Or using psql
-psql -U postgres
+Or using psql:
+```bash
+psql -U your_username
 CREATE DATABASE attendance_tracker;
 \q
 ```
 
-### 2.2 Run Database Migrations
+### 1.2 Run Migrations
 
 ```bash
 cd database
 
-# Run migrations in order
 psql attendance_tracker < migrations/001_create_students.sql
 psql attendance_tracker < migrations/002_create_meetings.sql
 psql attendance_tracker < migrations/003_create_attendance.sql
 ```
 
-Verify tables were created:
+### 1.3 Create Canvas Enrollments Table
+
+If you plan to use Canvas integration for roster sync:
+
 ```bash
-psql attendance_tracker
-\dt
-# You should see: students, meetings, attendance_records
-\q
+psql attendance_tracker -c "
+CREATE TABLE IF NOT EXISTS canvas_enrollments (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  student_id UUID NOT NULL REFERENCES students(id) ON DELETE CASCADE,
+  canvas_course_id INTEGER NOT NULL,
+  canvas_user_id INTEGER NOT NULL,
+  class_code VARCHAR(50) NOT NULL,
+  created_at TIMESTAMP DEFAULT NOW(),
+  updated_at TIMESTAMP DEFAULT NOW(),
+  UNIQUE(student_id, canvas_course_id)
+);
+"
 ```
 
-## Step 3: Backend Configuration
+### 1.4 Add class_code Column to Meetings
 
-### 3.1 Install Backend Dependencies
+```bash
+psql attendance_tracker -c "
+ALTER TABLE meetings ADD COLUMN IF NOT EXISTS class_code VARCHAR(50);
+CREATE INDEX IF NOT EXISTS idx_meetings_class_code ON meetings(class_code);
+"
+```
+
+### 1.5 Verify Tables
+
+```bash
+psql attendance_tracker -c "\dt"
+```
+
+You should see: `students`, `meetings`, `attendance_records`, `canvas_enrollments`.
+
+## Step 2: Backend Setup
+
+### 2.1 Install Dependencies
 
 ```bash
 cd backend
 npm install
 ```
 
-### 3.2 Configure Environment Variables
+### 2.2 Configure Environment
 
 ```bash
-# Copy example environment file
 cp .env.example .env
-
-# Edit .env file
-nano .env  # or use your preferred editor
 ```
 
-Update the `.env` file with your values:
+Edit `backend/.env`:
 
 ```env
-# Server Configuration
+# Server
 NODE_ENV=development
 PORT=3001
 
-# Database (update with your PostgreSQL credentials)
-DATABASE_URL=postgresql://postgres:your_password@localhost:5432/attendance_tracker
+# Database (update with your credentials)
+DATABASE_URL=postgresql://your_username:your_password@localhost:5432/attendance_tracker
 
-# Azure AD Configuration (from Step 1.4)
-AZURE_CLIENT_ID=your-client-id-here
-AZURE_CLIENT_SECRET=your-client-secret-here
-AZURE_TENANT_ID=your-tenant-id-here
-REDIRECT_URI=http://localhost:3001/auth/callback
-
-# JWT Configuration
-JWT_SECRET=generate-a-random-string-here
-
-# Application Settings
+# Application
 CORS_ORIGIN=http://localhost:3000
 LOG_LEVEL=debug
 
-# Sync Settings
-SYNC_INTERVAL_MINUTES=60
+# Folder Watcher - watches for new Teams attendance CSVs
+WATCH_ENABLED=true
+WATCH_FOLDER=../Attendance_Files
+PROCESSED_FOLDER=./processed
+
+# Canvas LMS Integration (optional - remove if not using Canvas)
+CANVAS_API_URL=https://your-school.instructure.com
+CANVAS_API_TOKEN=your-canvas-api-token-here
 ```
 
-**To generate a secure JWT_SECRET:**
+### 2.3 Create the Watch Folder
+
 ```bash
-node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+mkdir -p ../Attendance_Files
 ```
 
-### 3.3 Build Backend
+### 2.4 Start the Backend
 
 ```bash
-npm run build
-```
-
-## Step 4: Frontend Setup (Coming Soon)
-
-The React frontend will be set up in the next phase.
-
-## Step 5: Running the Application
-
-### Development Mode (with hot reload)
-
-```bash
-cd backend
 npm run dev
 ```
 
 You should see:
 ```
-🚀 Server running on port 3001
-📊 Environment: development
-🔗 API: http://localhost:3001/api
-❤️  Health check: http://localhost:3001/health
+Server running on port 3001
+Folder watcher active. Watching: ../Attendance_Files
 ```
 
-### Production Mode
+## Step 3: Frontend Setup
+
+### 3.1 Install Dependencies
 
 ```bash
-cd backend
-npm run build
+cd frontend
+npm install
+```
+
+### 3.2 Start the Frontend
+
+```bash
 npm start
 ```
 
-## Step 6: Testing the Setup
+The app opens at `http://localhost:3000`.
 
-### 6.1 Test Health Endpoint
+## Step 4: Canvas Integration (Optional)
 
-Open your browser or use curl:
-```bash
-curl http://localhost:3001/health
+If your school uses Canvas LMS, you can sync student rosters to detect absent students.
+
+### 4.1 Get a Canvas API Token
+
+1. Log in to your Canvas instance
+2. Go to **Account** > **Settings**
+3. Scroll to **Approved Integrations**
+4. Click **+ New Access Token**
+5. Give it a description (e.g., "Attendance Tracker")
+6. Click **Generate Token**
+7. Copy the token and add it to `backend/.env` as `CANVAS_API_TOKEN`
+
+### 4.2 Configure Canvas URL
+
+Set `CANVAS_API_URL` in `backend/.env` to your school's Canvas URL (e.g., `https://canvas.yourschool.edu.au`).
+
+### 4.3 Sync Rosters
+
+1. Open the app at `http://localhost:3000`
+2. Go to **Sync Data**
+3. Click **Sync All Class Rosters**
+4. The app pulls enrolled students from all your online/external classes
+
+### 4.4 How Class Filtering Works
+
+The app filters Canvas courses to only sync **online/external classes** (class codes ending in `X`, e.g., `11SENX`, `12SENX2`). This is controlled by the regex filter in `canvas.service.ts`.
+
+Canvas course codes must follow the format `{ClassCode}_{Year}` (e.g., `11SENX_2026`).
+
+## Step 5: Import Your First Attendance Data
+
+### Option A: Auto-Import (Recommended)
+
+1. After a Teams meeting ends, open the meeting chat
+2. Click the **Attendance** tab
+3. Click **Download** to save the CSV
+4. Move or save the file to your watched folder (`Attendance_Files/`)
+5. The app detects and imports it automatically
+6. Check the **Dashboard** to see the data
+
+### Option B: Manual Upload
+
+1. Go to **Sync Data** in the sidebar
+2. Under **Manual CSV Upload**, click **Choose File**
+3. Select your Teams attendance CSV
+4. Click **Upload**
+
+## Troubleshooting
+
+### Database connection error
+
+```
+Error: connect ECONNREFUSED 127.0.0.1:5432
 ```
 
-Expected response:
-```json
-{
-  "status": "ok",
-  "timestamp": "2024-01-15T10:30:00.000Z",
-  "environment": "development"
-}
-```
+- Ensure PostgreSQL is running: `pg_isready`
+- Check your `DATABASE_URL` in `backend/.env`
+- Verify the database exists: `psql -l | grep attendance_tracker`
 
-### 6.2 Test Authentication
+### Folder watcher not detecting files
 
-1. Get the auth URL:
-```bash
-curl http://localhost:3001/auth/login
-```
+- Check that `WATCH_FOLDER` in `.env` points to the correct path
+- The path is relative to the `backend/` directory
+- Verify the folder exists
+- Check the backend logs for watcher status
 
-2. Open the `authUrl` in your browser
-3. Sign in with your Microsoft 365 account
-4. You'll be redirected back to the callback URL
+### Canvas sync fails
 
-### 6.3 Test API Endpoints
+- Verify `CANVAS_API_URL` doesn't have a trailing slash
+- Check that your API token is valid and hasn't expired
+- Ensure you have teacher enrollment in Canvas courses
+- Check backend logs for specific error messages
+
+### Port already in use
 
 ```bash
-# Get all students
-curl http://localhost:3001/api/students
-
-# Get all meetings
-curl http://localhost:3001/api/meetings
-
-# Create a student
-curl -X POST http://localhost:3001/api/students \
-  -H "Content-Type: application/json" \
-  -d '{
-    "email": "student@example.com",
-    "name": "John Doe",
-    "student_id": "12345"
-  }'
-```
-
-## Common Issues & Solutions
-
-### Issue: Database connection error
-
-**Error:** `Error: connect ECONNREFUSED 127.0.0.1:5432`
-
-**Solution:**
-- Ensure PostgreSQL is running: `pg_ctl status`
-- Check your DATABASE_URL in `.env`
-- Verify database exists: `psql -l | grep attendance_tracker`
-
-### Issue: Azure authentication fails
-
-**Error:** `AADSTS700016: Application not found`
-
-**Solution:**
-- Double-check your AZURE_CLIENT_ID
-- Ensure the redirect URI matches exactly
-- Verify app registration is in the correct tenant
-
-### Issue: Missing permissions
-
-**Error:** `Insufficient privileges to complete the operation`
-
-**Solution:**
-- Ensure admin consent was granted for all API permissions
-- Check that you're using an admin account
-- Wait 5-10 minutes after granting consent
-
-### Issue: Port already in use
-
-**Error:** `EADDRINUSE: address already in use :::3001`
-
-**Solution:**
-```bash
-# Find and kill the process using port 3001
 lsof -ti:3001 | xargs kill -9
-
-# Or change PORT in .env to 3002
 ```
 
-## Next Steps
+### Teams CSV not importing correctly
 
-1. **Test Data Sync**: Once authenticated, test syncing meetings from Teams
-2. **Frontend Setup**: Build the React dashboard (coming in next phase)
-3. **Data Exploration**: Use the API to explore your attendance data
-4. **Export Data**: Test CSV export functionality
+The app handles the native Teams attendance CSV format:
+- UTF-16 LE encoded (with BOM)
+- Tab-separated (despite the .csv extension)
+- Multi-section format (Summary, Participants, In-Meeting Activities)
+
+If your CSV has a different format, check `backend/src/services/teams-csv-parser.service.ts`.
 
 ## Useful Commands
 
 ```bash
-# Backend development
+# Backend
 cd backend
 npm run dev          # Start with hot reload
-npm run build        # Build TypeScript
-npm start           # Start production server
-npm run lint        # Check code quality
-npm run lint:fix    # Fix linting issues
+npm run build        # Compile TypeScript
+npm start            # Start production server
+
+# Frontend
+cd frontend
+npm start            # Start development server
+npm run build        # Build for production
 
 # Database
-psql attendance_tracker                    # Connect to database
-psql attendance_tracker -c "SELECT * FROM students;"  # Query students
+psql attendance_tracker
+psql attendance_tracker -c "SELECT COUNT(*) FROM students;"
+psql attendance_tracker -c "SELECT class_code, COUNT(*) FROM canvas_enrollments GROUP BY class_code;"
 ```
-
-## Getting Help
-
-- Check the [API Documentation](./API.md)
-- Review the [Technical Design](../TECHNICAL_DESIGN.md)
-- Open an issue on GitHub
 
 ## Security Notes
 
-- Never commit your `.env` file
-- Keep your Azure client secret secure
-- Use strong passwords for PostgreSQL
-- Regularly rotate your client secrets (Azure AD)
+- Never commit your `.env` file to git
+- Keep your Canvas API token secure
+- The app runs locally only
+- All data stays on your machine

@@ -20,6 +20,7 @@ export interface Meeting {
   end_time: Date;
   organizer_email?: string;
   meeting_url?: string;
+  class_code?: string;
   created_at: Date;
 }
 
@@ -55,6 +56,7 @@ export interface CreateMeetingDTO {
   end_time: Date;
   organizer_email?: string;
   meeting_url?: string;
+  class_code?: string;
 }
 
 export interface CreateAttendanceRecordDTO {

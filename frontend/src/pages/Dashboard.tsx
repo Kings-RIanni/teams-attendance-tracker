@@ -15,15 +15,23 @@ import {
   TrendingUp as TrendingUpIcon,
 } from '@mui/icons-material';
 import { apiService } from '../services/api';
-import { Student, Meeting, AttendanceRecord } from '../types';
+import { Student, Meeting } from '../types';
 import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip } from 'recharts';
+
+interface MeetingSummary {
+  total_enrolled: number;
+  present: number;
+  late: number;
+  partial: number;
+  absent: number;
+}
 
 const Dashboard: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [students, setStudents] = useState<Student[]>([]);
   const [recentMeetings, setRecentMeetings] = useState<Meeting[]>([]);
-  const [attendanceRecords, setAttendanceRecords] = useState<AttendanceRecord[]>([]);
+  const [meetingSummaries, setMeetingSummaries] = useState<MeetingSummary[]>([]);
 
   useEffect(() => {
     loadDashboardData();
@@ -34,15 +42,27 @@ const Dashboard: React.FC = () => {
       setLoading(true);
       setError(null);
 
-      const [studentsData, meetingsData, attendanceData] = await Promise.all([
+      const [studentsData, meetingsData] = await Promise.all([
         apiService.getStudents(),
-        apiService.getRecentMeetings(5),
-        apiService.getAttendanceRecords(100, 0),
+        apiService.getMeetings(50, 0),
       ]);
 
       setStudents(studentsData);
       setRecentMeetings(meetingsData);
-      setAttendanceRecords(attendanceData);
+
+      // Fetch attendance summaries with Canvas absence data for each meeting
+      const summaries: MeetingSummary[] = [];
+      for (const meeting of meetingsData) {
+        try {
+          const detail = await apiService.getMeetingAttendanceWithAbsences(meeting.id);
+          if (detail?.summary) {
+            summaries.push(detail.summary);
+          }
+        } catch {
+          // Skip meetings that fail (e.g., no class code)
+        }
+      }
+      setMeetingSummaries(summaries);
     } catch (err: any) {
       setError(err.message || 'Failed to load dashboard data');
     } finally {
@@ -53,12 +73,13 @@ const Dashboard: React.FC = () => {
   const getStats = () => {
     const totalStudents = students.length;
     const totalMeetings = recentMeetings.length;
-    const totalAttendance = attendanceRecords.length;
 
-    const present = attendanceRecords.filter(r => r.status === 'present').length;
-    const late = attendanceRecords.filter(r => r.status === 'late').length;
-    const partial = attendanceRecords.filter(r => r.status === 'partial').length;
-    const absent = attendanceRecords.filter(r => r.status === 'absent').length;
+    // Aggregate across all meeting summaries (includes Canvas-derived absences)
+    const present = meetingSummaries.reduce((sum, s) => sum + s.present, 0);
+    const late = meetingSummaries.reduce((sum, s) => sum + s.late, 0);
+    const partial = meetingSummaries.reduce((sum, s) => sum + s.partial, 0);
+    const absent = meetingSummaries.reduce((sum, s) => sum + s.absent, 0);
+    const totalAttendance = present + late + partial + absent;
 
     const attendanceRate = totalAttendance > 0
       ? Math.round(((present + late) / totalAttendance) * 100)

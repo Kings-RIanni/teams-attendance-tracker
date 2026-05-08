@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   Box,
   Typography,
@@ -19,15 +19,44 @@ import {
   TableContainer,
   TableHead,
   TableRow,
+  Chip,
+  TextField,
+  Divider,
 } from '@mui/material';
 import {
   CloudUpload as UploadIcon,
   CheckCircle as CheckCircleIcon,
   Description as FileIcon,
+  FolderOpen as FolderIcon,
+  PlayArrow as PlayIcon,
+  Stop as StopIcon,
+  Refresh as RefreshIcon,
+  School as SchoolIcon,
+  Sync as SyncIcon,
 } from '@mui/icons-material';
 import { apiService } from '../services/api';
 
+interface WatcherStatus {
+  running: boolean;
+  watchFolder: string;
+  processedFolder: string;
+  filesProcessedToday: number;
+  totalFilesProcessed: number;
+  lastImportTime: string | null;
+  lastImportFile: string | null;
+}
+
+interface HistoryEntry {
+  fileName: string;
+  timestamp: string;
+  success: boolean;
+  meetingTitle: string;
+  recordsImported: number;
+  error?: string;
+}
+
 const SyncPage: React.FC = () => {
+  // Manual import state
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
@@ -35,8 +64,127 @@ const SyncPage: React.FC = () => {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [importResult, setImportResult] = useState<any>(null);
 
+  // Watcher state
+  const [watcherStatus, setWatcherStatus] = useState<WatcherStatus | null>(null);
+  const [watcherHistory, setWatcherHistory] = useState<HistoryEntry[]>([]);
+  const [watcherLoading, setWatcherLoading] = useState(false);
+  const [watcherError, setWatcherError] = useState<string | null>(null);
+  const [folderInput, setFolderInput] = useState('');
+  const [editingFolder, setEditingFolder] = useState(false);
+
+  // Canvas state
+  const [canvasStatus, setCanvasStatus] = useState<any>(null);
+  const [canvasCourses, setCanvasCourses] = useState<any[]>([]);
+  const [canvasSyncing, setCanvasSyncing] = useState(false);
+  const [canvasMessage, setCanvasMessage] = useState<string | null>(null);
+  const [canvasError, setCanvasError] = useState<string | null>(null);
+
   const steps = ['Select CSV File', 'Importing Data', 'Complete'];
 
+  // Fetch watcher status
+  const fetchWatcherStatus = useCallback(async () => {
+    try {
+      const status = await apiService.getWatcherStatus();
+      setWatcherStatus(status);
+      setFolderInput(status.watchFolder);
+    } catch (err: any) {
+      console.error('Failed to fetch watcher status:', err);
+    }
+  }, []);
+
+  // Fetch watcher history
+  const fetchWatcherHistory = useCallback(async () => {
+    try {
+      const history = await apiService.getWatcherHistory(20);
+      setWatcherHistory(history);
+    } catch (err: any) {
+      console.error('Failed to fetch watcher history:', err);
+    }
+  }, []);
+
+  // Fetch Canvas status
+  const fetchCanvasStatus = useCallback(async () => {
+    try {
+      const status = await apiService.getCanvasStatus();
+      setCanvasStatus(status);
+    } catch (err: any) {
+      console.error('Failed to fetch canvas status:', err);
+    }
+  }, []);
+
+  // Initial load and polling
+  useEffect(() => {
+    fetchWatcherStatus();
+    fetchWatcherHistory();
+    fetchCanvasStatus();
+
+    // Poll every 5 seconds for live updates
+    const interval = setInterval(() => {
+      fetchWatcherStatus();
+      fetchWatcherHistory();
+    }, 5000);
+
+    return () => clearInterval(interval);
+  }, [fetchWatcherStatus, fetchWatcherHistory, fetchCanvasStatus]);
+
+  // Watcher controls
+  const handleStartWatcher = async () => {
+    try {
+      setWatcherLoading(true);
+      setWatcherError(null);
+      await apiService.startWatcher();
+      await fetchWatcherStatus();
+    } catch (err: any) {
+      setWatcherError(err.response?.data?.message || 'Failed to start watcher');
+    } finally {
+      setWatcherLoading(false);
+    }
+  };
+
+  const handleStopWatcher = async () => {
+    try {
+      setWatcherLoading(true);
+      setWatcherError(null);
+      await apiService.stopWatcher();
+      await fetchWatcherStatus();
+    } catch (err: any) {
+      setWatcherError(err.response?.data?.message || 'Failed to stop watcher');
+    } finally {
+      setWatcherLoading(false);
+    }
+  };
+
+  const handleUpdateFolder = async () => {
+    try {
+      setWatcherLoading(true);
+      setWatcherError(null);
+      await apiService.updateWatcherConfig({ watchFolder: folderInput });
+      await fetchWatcherStatus();
+      setEditingFolder(false);
+    } catch (err: any) {
+      setWatcherError(err.response?.data?.message || 'Failed to update folder');
+    } finally {
+      setWatcherLoading(false);
+    }
+  };
+
+  // Canvas sync handler
+  const handleCanvasSyncAll = async () => {
+    try {
+      setCanvasSyncing(true);
+      setCanvasError(null);
+      setCanvasMessage(null);
+      const result = await apiService.syncAllCanvasRosters();
+      setCanvasMessage(result.message);
+      await fetchCanvasStatus();
+    } catch (err: any) {
+      setCanvasError(err.response?.data?.message || 'Failed to sync Canvas rosters');
+    } finally {
+      setCanvasSyncing(false);
+    }
+  };
+
+  // Manual import handlers
   const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (file) {
@@ -92,13 +240,263 @@ const SyncPage: React.FC = () => {
         Import Attendance Data
       </Typography>
       <Typography variant="body1" color="textSecondary" paragraph>
-        Upload CSV file with attendance data from IT department
+        Automatically import attendance when you download reports from Teams, or manually upload CSV files.
       </Typography>
 
+      {/* Folder Watcher Section */}
+      <Paper elevation={2} sx={{ p: 3, mb: 3 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <FolderIcon color="primary" />
+            <Typography variant="h6">
+              Auto-Import (Folder Watcher)
+            </Typography>
+          </Box>
+          <Chip
+            label={watcherStatus?.running ? 'Active' : 'Stopped'}
+            color={watcherStatus?.running ? 'success' : 'default'}
+            size="small"
+          />
+        </Box>
+
+        <Typography variant="body2" color="textSecondary" sx={{ mb: 2 }}>
+          When active, the app watches a folder on your computer. Download an attendance report from
+          Teams and it will be imported automatically.
+        </Typography>
+
+        {watcherError && (
+          <Alert severity="error" onClose={() => setWatcherError(null)} sx={{ mb: 2 }}>
+            {watcherError}
+          </Alert>
+        )}
+
+        {/* Watch folder path */}
+        <Box sx={{ mb: 2 }}>
+          <Typography variant="body2" fontWeight="bold" gutterBottom>
+            Watched Folder:
+          </Typography>
+          {editingFolder ? (
+            <Stack direction="row" spacing={1} alignItems="center">
+              <TextField
+                size="small"
+                fullWidth
+                value={folderInput}
+                onChange={(e) => setFolderInput(e.target.value)}
+                placeholder="e.g., ~/Downloads"
+              />
+              <Button size="small" variant="contained" onClick={handleUpdateFolder} disabled={watcherLoading}>
+                Save
+              </Button>
+              <Button size="small" onClick={() => setEditingFolder(false)}>
+                Cancel
+              </Button>
+            </Stack>
+          ) : (
+            <Stack direction="row" spacing={1} alignItems="center">
+              <Typography variant="body2" sx={{ fontFamily: 'monospace', bgcolor: 'grey.100', px: 1, py: 0.5, borderRadius: 1 }}>
+                {watcherStatus?.watchFolder || 'Not configured'}
+              </Typography>
+              <Button size="small" onClick={() => setEditingFolder(true)}>
+                Change
+              </Button>
+            </Stack>
+          )}
+        </Box>
+
+        {/* Watcher controls */}
+        <Stack direction="row" spacing={2} sx={{ mb: 2 }}>
+          {watcherStatus?.running ? (
+            <Button
+              variant="outlined"
+              color="error"
+              startIcon={<StopIcon />}
+              onClick={handleStopWatcher}
+              disabled={watcherLoading}
+              size="small"
+            >
+              Stop Watching
+            </Button>
+          ) : (
+            <Button
+              variant="contained"
+              color="success"
+              startIcon={<PlayIcon />}
+              onClick={handleStartWatcher}
+              disabled={watcherLoading}
+              size="small"
+            >
+              Start Watching
+            </Button>
+          )}
+          <Button
+            variant="text"
+            startIcon={<RefreshIcon />}
+            onClick={() => { fetchWatcherStatus(); fetchWatcherHistory(); }}
+            size="small"
+          >
+            Refresh
+          </Button>
+        </Stack>
+
+        {/* Stats */}
+        {watcherStatus && (
+          <Stack direction="row" spacing={3} sx={{ mb: 2 }}>
+            <Box>
+              <Typography variant="caption" color="textSecondary">Files Today</Typography>
+              <Typography variant="h6">{watcherStatus.filesProcessedToday}</Typography>
+            </Box>
+            <Box>
+              <Typography variant="caption" color="textSecondary">Total Processed</Typography>
+              <Typography variant="h6">{watcherStatus.totalFilesProcessed}</Typography>
+            </Box>
+            <Box>
+              <Typography variant="caption" color="textSecondary">Last Import</Typography>
+              <Typography variant="body2">
+                {watcherStatus.lastImportTime
+                  ? new Date(watcherStatus.lastImportTime).toLocaleString()
+                  : 'None yet'}
+              </Typography>
+            </Box>
+          </Stack>
+        )}
+
+        {/* Recent history */}
+        {watcherHistory.length > 0 && (
+          <Box>
+            <Typography variant="body2" fontWeight="bold" gutterBottom>
+              Recent Imports:
+            </Typography>
+            <TableContainer sx={{ maxHeight: 200 }}>
+              <Table size="small" stickyHeader>
+                <TableHead>
+                  <TableRow>
+                    <TableCell>Time</TableCell>
+                    <TableCell>Meeting</TableCell>
+                    <TableCell>Records</TableCell>
+                    <TableCell>Status</TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {watcherHistory.slice(0, 10).map((entry, idx) => (
+                    <TableRow key={idx}>
+                      <TableCell sx={{ fontSize: '0.75rem' }}>
+                        {new Date(entry.timestamp).toLocaleString()}
+                      </TableCell>
+                      <TableCell sx={{ fontSize: '0.75rem' }}>
+                        {entry.meetingTitle || entry.fileName}
+                      </TableCell>
+                      <TableCell sx={{ fontSize: '0.75rem' }}>
+                        {entry.recordsImported}
+                      </TableCell>
+                      <TableCell>
+                        <Chip
+                          label={entry.success ? 'OK' : 'Error'}
+                          color={entry.success ? 'success' : 'error'}
+                          size="small"
+                          variant="outlined"
+                        />
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </TableContainer>
+          </Box>
+        )}
+
+        {/* Instructions */}
+        <Alert severity="info" sx={{ mt: 2 }}>
+          <Typography variant="body2" fontWeight="bold" gutterBottom>
+            How to use:
+          </Typography>
+          <Box component="ol" sx={{ pl: 2, mb: 0, '& li': { mb: 0.5 } }}>
+            <li>Start the folder watcher (above)</li>
+            <li>After a Teams meeting ends, open the meeting chat</li>
+            <li>Click the <strong>Attendance</strong> tab, then <strong>Download</strong></li>
+            <li>Save the file to your watched folder ({watcherStatus?.watchFolder || '~/Downloads'})</li>
+            <li>The attendance data appears in your dashboard automatically</li>
+          </Box>
+        </Alert>
+      </Paper>
+
+      {/* Canvas Integration Section */}
+      {canvasStatus?.configured && (
+        <Paper elevation={2} sx={{ p: 3, mb: 3 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              <SchoolIcon color="secondary" />
+              <Typography variant="h6">
+                Canvas Class Rosters
+              </Typography>
+            </Box>
+            <Chip
+              label="Connected"
+              color="success"
+              size="small"
+              variant="outlined"
+            />
+          </Box>
+
+          <Typography variant="body2" color="textSecondary" sx={{ mb: 2 }}>
+            Sync student rosters from Canvas to identify absent students.
+            Only online/external classes (with X in the code) are synced.
+          </Typography>
+
+          {canvasError && (
+            <Alert severity="error" onClose={() => setCanvasError(null)} sx={{ mb: 2 }}>
+              {canvasError}
+            </Alert>
+          )}
+
+          {canvasMessage && (
+            <Alert severity="success" onClose={() => setCanvasMessage(null)} sx={{ mb: 2 }}>
+              {canvasMessage}
+            </Alert>
+          )}
+
+          <Button
+            variant="contained"
+            color="secondary"
+            startIcon={canvasSyncing ? <CircularProgress size={16} color="inherit" /> : <SyncIcon />}
+            onClick={handleCanvasSyncAll}
+            disabled={canvasSyncing}
+            sx={{ mb: 2 }}
+          >
+            {canvasSyncing ? 'Syncing...' : 'Sync All Class Rosters'}
+          </Button>
+
+          {/* Synced classes summary */}
+          {canvasStatus?.synced_classes?.length > 0 && (
+            <Box>
+              <Typography variant="body2" fontWeight="bold" gutterBottom>
+                Synced Classes:
+              </Typography>
+              <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+                {canvasStatus.synced_classes.map((cls: any) => (
+                  <Chip
+                    key={cls.class_code}
+                    label={`${cls.class_code} (${cls.student_count} students)`}
+                    size="small"
+                    variant="outlined"
+                    color="secondary"
+                  />
+                ))}
+              </Stack>
+            </Box>
+          )}
+        </Paper>
+      )}
+
+      <Divider sx={{ my: 3 }} />
+
+      {/* Manual Import Section */}
       <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' }, gap: 3 }}>
         <Paper elevation={2} sx={{ p: 3 }}>
           <Typography variant="h6" gutterBottom>
-            CSV File Import
+            Manual CSV Upload
+          </Typography>
+          <Typography variant="body2" color="textSecondary" sx={{ mb: 2 }}>
+            Upload a Teams attendance CSV file manually as a fallback.
           </Typography>
 
           <Stepper activeStep={activeStep} sx={{ mb: 3 }}>
@@ -255,48 +653,50 @@ const SyncPage: React.FC = () => {
           <Card elevation={2} sx={{ mb: 2 }}>
             <CardContent>
               <Typography variant="h6" gutterBottom>
-                How It Works
-              </Typography>
-              <Box component="ol" sx={{ pl: 2 }}>
-                <Typography component="li" variant="body2" paragraph>
-                  <strong>Get CSV from IT:</strong> Request the attendance CSV file from your IT
-                  department (generated via Azure runbook)
-                </Typography>
-                <Typography component="li" variant="body2" paragraph>
-                  <strong>Select the file:</strong> Click "Select CSV File" and choose the
-                  downloaded CSV
-                </Typography>
-                <Typography component="li" variant="body2" paragraph>
-                  <strong>Import data:</strong> Click "Import Attendance Data" to process the CSV
-                </Typography>
-                <Typography component="li" variant="body2" paragraph>
-                  <strong>View results:</strong> The app will create meetings, students, and
-                  attendance records automatically
-                </Typography>
-              </Box>
-            </CardContent>
-          </Card>
-
-          <Card elevation={2} sx={{ mb: 2 }}>
-            <CardContent>
-              <Typography variant="h6" gutterBottom>
-                Expected CSV Format
+                Supported CSV Formats
               </Typography>
               <Typography variant="body2" paragraph>
-                The CSV file should contain the following columns:
+                The app accepts both the <strong>native Teams attendance report</strong> format
+                and a custom CSV format:
+              </Typography>
+              <Typography variant="body2" fontWeight="bold" gutterBottom>
+                Teams Native Format (downloaded from meeting chat):
               </Typography>
               <Box
                 component="code"
                 sx={{
                   display: 'block',
-                  p: 2,
+                  p: 1.5,
                   bgcolor: 'grey.100',
                   borderRadius: 1,
-                  fontSize: '0.75rem',
+                  fontSize: '0.7rem',
+                  overflowX: 'auto',
+                  mb: 2,
+                }}
+              >
+                1. Summary{'\n'}
+                Meeting Title &lt;tab&gt; Class Name{'\n'}
+                Start Time &lt;tab&gt; 1/15/2024, 9:00 AM{'\n'}
+                ...{'\n'}
+                2. Participants{'\n'}
+                Full Name &lt;tab&gt; First Join &lt;tab&gt; Last Leave ...
+              </Box>
+              <Typography variant="body2" fontWeight="bold" gutterBottom>
+                Custom CSV Format:
+              </Typography>
+              <Box
+                component="code"
+                sx={{
+                  display: 'block',
+                  p: 1.5,
+                  bgcolor: 'grey.100',
+                  borderRadius: 1,
+                  fontSize: '0.7rem',
                   overflowX: 'auto',
                 }}
               >
-                meeting_id, meeting_title, meeting_start, meeting_end, student_email, student_name,
+                meeting_id, meeting_title, meeting_start,{'\n'}
+                meeting_end, student_email, student_name,{'\n'}
                 join_time, leave_time, duration_minutes
               </Box>
             </CardContent>
@@ -305,20 +705,20 @@ const SyncPage: React.FC = () => {
           <Card elevation={2}>
             <CardContent>
               <Typography variant="h6" gutterBottom color="info.main">
-                Important Notes
+                Tips
               </Typography>
               <Box component="ul" sx={{ pl: 2 }}>
                 <Typography component="li" variant="body2" paragraph>
-                  CSV files must be provided by your IT department
+                  Duplicate records are automatically skipped
                 </Typography>
                 <Typography component="li" variant="body2" paragraph>
-                  Duplicate records (same meeting, student, join time) will be skipped
+                  Students and meetings are created automatically from the CSV
                 </Typography>
                 <Typography component="li" variant="body2" paragraph>
-                  The import process will automatically create new meetings and students
+                  Late = joined 10+ minutes after start; Partial = attended less than 30 minutes
                 </Typography>
                 <Typography component="li" variant="body2" paragraph>
-                  You can import multiple CSV files to update attendance data
+                  The folder watcher only processes files that look like Teams attendance reports
                 </Typography>
               </Box>
             </CardContent>

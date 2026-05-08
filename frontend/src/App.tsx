@@ -23,12 +23,14 @@ import {
   Event as EventIcon,
   Assessment as AssessmentIcon,
   Sync as SyncIcon,
+  School as SchoolIcon,
 } from '@mui/icons-material';
 import Dashboard from './pages/Dashboard';
 import Students from './pages/Students';
 import Meetings from './pages/Meetings';
 import Reports from './pages/Reports';
 import SyncPage from './pages/SyncPage';
+import Classes from './pages/Classes';
 
 const theme = createTheme({
   palette: {
@@ -43,7 +45,7 @@ const theme = createTheme({
 
 const drawerWidth = 240;
 
-type Page = 'dashboard' | 'students' | 'meetings' | 'reports' | 'sync';
+type Page = 'dashboard' | 'students' | 'meetings' | 'classes' | 'reports' | 'sync';
 
 function App() {
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -55,6 +57,7 @@ function App() {
 
   const menuItems = [
     { id: 'dashboard' as Page, label: 'Dashboard', icon: <DashboardIcon /> },
+    { id: 'classes' as Page, label: 'Classes', icon: <SchoolIcon /> },
     { id: 'students' as Page, label: 'Students', icon: <PeopleIcon /> },
     { id: 'meetings' as Page, label: 'Meetings', icon: <EventIcon /> },
     { id: 'reports' as Page, label: 'Reports', icon: <AssessmentIcon /> },
@@ -65,6 +68,8 @@ function App() {
     switch (currentPage) {
       case 'dashboard':
         return <Dashboard />;
+      case 'classes':
+        return <Classes />;
       case 'students':
         return <Students />;
       case 'meetings':

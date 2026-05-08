@@ -1,155 +1,94 @@
-# Microsoft Teams Attendance Tracker - Technical Design Document
+# Technical Design - Teams Attendance Tracker
 
 ## Overview
-An application to track student attendance in Microsoft Teams meetings, recording join times and generating attendance reports.
 
-## Application Architecture
+A local desktop application that tracks student attendance in Microsoft Teams online classes by importing native Teams attendance CSV exports and cross-referencing with Canvas LMS student rosters.
 
-### Recommended Architecture: Three-Tier Web Application
+## Architecture
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│                     Frontend (React)                    │
-│  - Dashboard UI                                         │
-│  - Attendance Reports                                   │
-│  - Student Management                                   │
-└─────────────────────────────────────────────────────────┘
-                            ↓ HTTPS/REST API
-┌─────────────────────────────────────────────────────────┐
-│                  Backend API (Node.js)                  │
-│  - Authentication (Microsoft OAuth 2.0)                 │
-│  - Microsoft Graph API Integration                      │
-│  - Business Logic                                       │
-│  - Data Processing                                      │
-└─────────────────────────────────────────────────────────┘
-                            ↓
-┌─────────────────────────────────────────────────────────┐
-│              Database (PostgreSQL/MongoDB)              │
-│  - Student Records                                      │
-│  - Attendance Logs                                      │
-│  - Meeting Metadata                                     │
-└─────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────┐
+│                Frontend (React)                   │
+│  Dashboard, Classes, Students, Meetings, Reports  │
+│  Material-UI  |  Recharts  |  Axios              │
+└───────────────────────┬──────────────────────────┘
+                        │ REST API (localhost:3001)
+┌───────────────────────┴──────────────────────────┐
+│               Backend (Express/Node.js)           │
+│                                                   │
+│  ┌─────────────┐  ┌──────────────┐  ┌──────────┐ │
+│  │ Folder      │  │ Teams CSV    │  │ Canvas   │ │
+│  │ Watcher     │──│ Parser       │  │ Service  │ │
+│  │ (chokidar)  │  │              │  │ (REST)   │ │
+│  └─────────────┘  └──────┬───────┘  └────┬─────┘ │
+│                          │               │        │
+│  ┌───────────────────────┴───────────────┴──────┐ │
+│  │            PostgreSQL Database                │ │
+│  │  students | meetings | attendance_records     │ │
+│  │  canvas_enrollments                           │ │
+│  └──────────────────────────────────────────────┘ │
+└──────────────────────────────────────────────────┘
+                        │
+        ┌───────────────┴───────────────┐
+        │                               │
+   Teams CSV Files              Canvas LMS API
+   (downloaded from              (roster sync)
+    meeting chat)
 ```
+
+## Data Flow
+
+### Attendance Import
+
+1. Teacher downloads attendance CSV from Teams meeting chat
+2. File saved to watched folder (e.g., `Attendance_Files/`)
+3. `chokidar` file watcher detects the new `.csv` file
+4. `TeamsCSVParser` handles the native Teams format:
+   - Detects UTF-16 LE encoding with BOM
+   - Splits multi-section format (Summary, Participants, etc.)
+   - Extracts meeting metadata from Summary section
+   - Parses participant rows from Participants section
+   - Converts duration format ("Xh Xm Xs") to minutes
+5. Class code extracted from meeting title via regex (`/\b(\d{1,2}[A-Z]{2,}\d?)\b/`)
+6. Students created/matched by email, meeting created/matched by Teams meeting ID
+7. Attendance records inserted with duplicate detection (`ON CONFLICT DO NOTHING`)
+8. Processed CSV moved to `processed/` folder
+
+### Canvas Roster Sync
+
+1. Backend fetches courses from Canvas REST API (`/api/v1/courses`)
+2. Filtered to: current year, available, teacher enrollment, online/external only (`/X\d?$/`)
+3. For each course, fetches active student enrollments with emails
+4. Students upserted into `students` table, enrollment links stored in `canvas_enrollments`
+5. Class code extracted from Canvas course code (e.g., `11SENX_2026` -> `11SENX`)
+
+### Absence Detection
+
+1. For a meeting with `class_code = "11SENX"`, the base code `"11SENX"` is computed
+2. All related Canvas enrollments fetched via `LIKE '11SENX%'` (amalgamation)
+3. Combines rosters from 11SENX, 11SENX2, etc. since they share the same meeting
+4. Enrolled student IDs compared against attendance records for that meeting
+5. Students on roster but not in attendance = absent
 
 ## Technology Stack
 
-### Frontend
-- **Framework**: React with TypeScript
-- **UI Library**: Material-UI (MUI) or Tailwind CSS
-- **State Management**: React Query + Context API
-- **Charting**: Recharts or Chart.js
-- **Authentication**: MSAL (Microsoft Authentication Library) for React
-
-**Why React?**
-- Rich ecosystem for data visualization
-- Excellent Microsoft authentication libraries
-- Strong TypeScript support
-- Large community and resources
-
-### Backend
-- **Runtime**: Node.js (v18+)
-- **Framework**: Express.js or NestJS
-- **Language**: TypeScript
-- **Authentication**: MSAL Node
-- **API Client**: @microsoft/microsoft-graph-client
-- **Validation**: Zod or Joi
-- **Task Scheduling**: node-cron or Bull (for recurring data fetches)
-
-**Why Node.js?**
-- Excellent Microsoft Graph SDK support
-- JavaScript/TypeScript across full stack
-- Great async handling for API calls
-- Fast development cycle
-
-**Alternative Backend Options:**
-- **Python (FastAPI)**: If you prefer Python, excellent for data processing
-- **C# (.NET)**: Native Microsoft ecosystem integration
-
-### Database
-**Primary Recommendation**: PostgreSQL
-- Structured data (students, meetings, attendance records)
-- ACID compliance for reliable data
-- Excellent JSON support for flexible metadata
-- Strong query capabilities for reports
-
-**Alternative**: MongoDB
-- Good for flexible schemas
-- Easy to start with
-- Better if attendance data structure varies significantly
-
-### Cloud Hosting (Recommended)
-- **Azure App Service**: Native Microsoft integration
-- **Azure SQL Database** or **Azure Cosmos DB**: Managed databases
-- **Alternative**: Vercel (frontend) + Railway/Render (backend)
-
-## Project Structure
-
-```
-attendance-tracker/
-├── frontend/
-│   ├── src/
-│   │   ├── components/
-│   │   │   ├── Dashboard/
-│   │   │   ├── AttendanceTable/
-│   │   │   ├── StudentList/
-│   │   │   └── Reports/
-│   │   ├── pages/
-│   │   │   ├── Login.tsx
-│   │   │   ├── Dashboard.tsx
-│   │   │   ├── Meetings.tsx
-│   │   │   └── Students.tsx
-│   │   ├── services/
-│   │   │   ├── api.ts
-│   │   │   └── auth.ts
-│   │   ├── hooks/
-│   │   ├── types/
-│   │   └── App.tsx
-│   ├── package.json
-│   └── tsconfig.json
-│
-├── backend/
-│   ├── src/
-│   │   ├── controllers/
-│   │   │   ├── attendance.controller.ts
-│   │   │   ├── meetings.controller.ts
-│   │   │   └── students.controller.ts
-│   │   ├── services/
-│   │   │   ├── graph.service.ts
-│   │   │   ├── attendance.service.ts
-│   │   │   └── sync.service.ts
-│   │   ├── models/
-│   │   │   ├── Student.ts
-│   │   │   ├── Meeting.ts
-│   │   │   └── AttendanceRecord.ts
-│   │   ├── middleware/
-│   │   │   ├── auth.middleware.ts
-│   │   │   └── error.middleware.ts
-│   │   ├── routes/
-│   │   │   ├── attendance.routes.ts
-│   │   │   └── meetings.routes.ts
-│   │   ├── config/
-│   │   │   └── database.ts
-│   │   └── server.ts
-│   ├── package.json
-│   └── tsconfig.json
-│
-├── database/
-│   └── migrations/
-│       ├── 001_create_students.sql
-│       ├── 002_create_meetings.sql
-│       └── 003_create_attendance.sql
-│
-├── docs/
-│   ├── API.md
-│   ├── DEPLOYMENT.md
-│   └── SETUP.md
-│
-└── README.md
-```
+| Component | Technology | Purpose |
+|-----------|-----------|---------|
+| Frontend | React 18 + TypeScript | UI framework |
+| UI Components | Material-UI v7 | Design system |
+| Charts | Recharts | Pie charts, data visualization |
+| Backend | Express + TypeScript | REST API server |
+| File Watching | chokidar | Detect new CSV files |
+| CSV Parsing | csv-parse + custom parser | Handle Teams CSV format |
+| HTTP Client | axios | Canvas API calls |
+| Database | PostgreSQL 14+ | Data storage |
+| DB Client | pg (node-postgres) | Database queries |
+| Validation | zod | Request validation |
+| Logging | winston | Structured logging |
 
 ## Database Schema
 
-### Students Table
+### students
 ```sql
 CREATE TABLE students (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -162,7 +101,7 @@ CREATE TABLE students (
 );
 ```
 
-### Meetings Table
+### meetings
 ```sql
 CREATE TABLE meetings (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -172,11 +111,12 @@ CREATE TABLE meetings (
     end_time TIMESTAMP NOT NULL,
     organizer_email VARCHAR(255),
     meeting_url TEXT,
+    class_code VARCHAR(50),
     created_at TIMESTAMP DEFAULT NOW()
 );
 ```
 
-### Attendance Records Table
+### attendance_records
 ```sql
 CREATE TABLE attendance_records (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -185,198 +125,146 @@ CREATE TABLE attendance_records (
     join_time TIMESTAMP NOT NULL,
     leave_time TIMESTAMP,
     duration_minutes INTEGER,
-    status VARCHAR(50), -- 'present', 'late', 'absent', 'partial'
+    status VARCHAR(50),  -- 'present', 'late', 'partial'
     created_at TIMESTAMP DEFAULT NOW(),
     UNIQUE(meeting_id, student_id, join_time)
 );
 ```
 
-## Microsoft Graph API Integration
-
-### Required API Permissions
-
-Register your app in Azure AD with these permissions:
-
-**Delegated Permissions** (user signs in):
-- `OnlineMeetings.Read`
-- `OnlineMeetings.ReadWrite`
-- `Calendars.Read`
-- `User.Read`
-- `User.ReadBasic.All`
-
-**Application Permissions** (background sync):
-- `OnlineMeetings.Read.All`
-- `CallRecords.Read.All`
-- `User.Read.All`
-
-### Key API Endpoints to Use
-
-1. **Get Online Meetings**
-   ```
-   GET /users/{userId}/onlineMeetings
-   GET /users/{userId}/calendar/events
-   ```
-
-2. **Get Attendance Reports**
-   ```
-   GET /users/{userId}/onlineMeetings/{meetingId}/attendanceReports
-   GET /users/{userId}/onlineMeetings/{meetingId}/attendanceReports/{reportId}
-   ```
-
-3. **Get Attendance Records**
-   ```
-   GET /users/{userId}/onlineMeetings/{meetingId}/attendanceReports/{reportId}/attendanceRecords
-   ```
-
-## Development Phases
-
-### Phase 1: Foundation (Week 1-2)
-- [ ] Set up development environment
-- [ ] Create Azure AD app registration
-- [ ] Initialize frontend and backend projects
-- [ ] Set up database with migrations
-- [ ] Implement Microsoft OAuth authentication
-- [ ] Test Graph API connectivity
-
-### Phase 2: Core Features (Week 3-4)
-- [ ] Implement meeting data fetching from Teams
-- [ ] Build attendance record sync service
-- [ ] Create student management CRUD operations
-- [ ] Develop basic dashboard UI
-- [ ] Implement attendance table view
-
-### Phase 3: Reporting (Week 5-6)
-- [ ] Build attendance report generation
-- [ ] Add filtering and search capabilities
-- [ ] Create data export (CSV/Excel)
-- [ ] Implement attendance statistics
-- [ ] Add visualizations (charts, graphs)
-
-### Phase 4: Polish & Deploy (Week 7-8)
-- [ ] Add automated background sync
-- [ ] Implement error handling and logging
-- [ ] Write unit and integration tests
-- [ ] Deploy to cloud hosting
-- [ ] Documentation and user guide
-
-## Key Features to Implement
-
-### 1. Automated Sync
-- Scheduled job to fetch attendance reports every hour
-- Manual sync trigger option
-- Conflict resolution for duplicate records
-
-### 2. Dashboard Views
-- Overview statistics (total meetings, avg attendance)
-- Recent meetings list
-- Students with poor attendance alerts
-- Attendance trends over time
-
-### 3. Reporting Capabilities
-- Attendance by student (individual report cards)
-- Attendance by meeting
-- Date range filtering
-- Export to CSV, Excel, PDF
-- Attendance percentage calculations
-
-### 4. Student Management
-- Import students from CSV
-- Sync with Azure AD users
-- Manual student addition/editing
-- Student grouping/classes
-
-## Authentication Flow
-
-1. User visits application
-2. Redirected to Microsoft login
-3. User authenticates with school Microsoft account
-4. App receives OAuth token
-5. Token used for Graph API calls
-6. Refresh token stored securely for background sync
-
-## Security Considerations
-
-- Store secrets in environment variables
-- Use HTTPS only in production
-- Implement CORS properly
-- Validate all user inputs
-- Use parameterized database queries
-- Implement rate limiting on API
-- Store refresh tokens encrypted
-- Implement role-based access (admin vs. viewer)
-
-## Environment Variables
-
-```env
-# Backend
-NODE_ENV=development
-PORT=3001
-DATABASE_URL=postgresql://user:password@localhost:5432/attendance
-JWT_SECRET=your-secret-key
-
-# Microsoft Azure AD
-AZURE_CLIENT_ID=your-client-id
-AZURE_CLIENT_SECRET=your-client-secret
-AZURE_TENANT_ID=your-tenant-id
-REDIRECT_URI=http://localhost:3001/auth/callback
-
-# Frontend
-REACT_APP_API_URL=http://localhost:3001/api
-REACT_APP_AZURE_CLIENT_ID=your-client-id
+### canvas_enrollments
+```sql
+CREATE TABLE canvas_enrollments (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    student_id UUID NOT NULL REFERENCES students(id) ON DELETE CASCADE,
+    canvas_course_id INTEGER NOT NULL,
+    canvas_user_id INTEGER NOT NULL,
+    class_code VARCHAR(50) NOT NULL,
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW(),
+    UNIQUE(student_id, canvas_course_id)
+);
 ```
 
-## Alternative Approaches
+## Attendance Status Rules
 
-### Simpler MVP Approach
-If you want to start smaller:
-- Use **Next.js** for full-stack (combines frontend + backend)
-- Use **SQLite** for local development
-- Skip automated sync initially, use manual refresh
-- Focus on read-only attendance viewing first
+| Status | Condition |
+|--------|-----------|
+| Present | Joined within 10 minutes of meeting start AND stayed 30+ minutes |
+| Late | Joined more than 10 minutes after meeting start |
+| Partial | Attended less than 30 minutes of the meeting |
+| Absent | On Canvas roster but no attendance record (computed at query time) |
 
-### Enterprise Approach
-For larger scale:
-- Microservices architecture
-- Redis for caching
-- Message queue (RabbitMQ/Azure Service Bus)
-- Containerization with Docker
-- Kubernetes orchestration
+## Class Code System
 
-## Getting Started
+### Extraction
 
-### Prerequisites
-- Node.js 18+ and npm
-- PostgreSQL 14+ (or Docker)
-- Microsoft 365 admin access
-- Azure AD developer account
+Class codes are extracted from Teams meeting titles using the regex `/\b(\d{1,2}[A-Z]{2,}\d?)\b/`:
+- `"Week 3 11SENX Online Class"` -> `11SENX`
+- `"12SENX2 Weekly Meeting"` -> `12SENX2`
 
-### Quick Start Commands
-```bash
-# Clone/create project
-mkdir attendance-tracker && cd attendance-tracker
+### Amalgamation
 
-# Initialize backend
-mkdir backend && cd backend
-npm init -y
-npm install express @microsoft/microsoft-graph-client @azure/msal-node pg dotenv
-npm install -D typescript @types/node @types/express ts-node
+Related classes share the same Teams meeting:
+- `11SENX` + `11SENX2` -> same Year 11 meeting
+- `12SENX` + `12SENX2` + `12SENX3` -> same Year 12 meeting
 
-# Initialize frontend
-cd ..
-npx create-react-app frontend --template typescript
-cd frontend
-npm install @azure/msal-react @azure/msal-browser @mui/material axios react-query
+The base code is computed by stripping trailing digits after `X`:
+- `11SENX2` -> base `11SENX`
+- `12SENX3` -> base `12SENX`
+
+Roster queries use `LIKE 'baseCode%'` to fetch all related enrollments.
+
+### Canvas Course Code Format
+
+Canvas courses use the format `{ClassCode}_{Year}`:
+- `11SENX_2026` -> class code `11SENX`
+- `12SENX2_2026` -> class code `12SENX2`
+
+Only courses matching `/X\d?$/` (ending in X or X+digit) are synced.
+
+## API Routes
+
+### Students (`/api/students`)
+- `GET /` - List all students (optional `?class_code=` filter)
+- `GET /class-codes` - Individual Canvas class codes with counts
+- `GET /search?q=` - Search by name/email/ID
+- `GET /:id` - Get student by ID
+- `GET /:id/attendance` - Student attendance summary
+- `POST /` - Create student
+- `PUT /:id` - Update student
+- `DELETE /:id` - Delete student
+
+### Meetings (`/api/meetings`)
+- `GET /` - List meetings (optional `?class_code=` filter)
+- `GET /classes` - Distinct class codes
+- `GET /recent?limit=` - Recent meetings
+- `GET /:id` - Get meeting by ID
+- `GET /:id/attendance` - Meeting attendance summary
+
+### Attendance (`/api/attendance`)
+- `GET /` - List attendance records
+- `GET /report` - Filtered report
+- `POST /import` - Upload CSV
+- `GET /export` - Download filtered CSV
+
+### Folder Watcher (`/api/watcher`)
+- `GET /status` - Watcher status (running, folder, file count)
+- `POST /start` - Start watching
+- `POST /stop` - Stop watching
+- `PUT /config` - Update watched folder
+- `GET /history` - Import history
+
+### Canvas (`/api/canvas`)
+- `GET /status` - Canvas config + amalgamated class counts
+- `GET /courses` - Available Canvas courses
+- `POST /sync` - Sync single course roster
+- `POST /sync-all` - Sync all online course rosters
+- `GET /roster/:classCode` - Get class roster
+- `GET /attendance/:meetingId` - Attendance with absence detection
+
+## Teams CSV Format
+
+Teams exports attendance as a multi-section, tab-separated file with UTF-16 LE encoding:
+
+```
+1. Summary
+Meeting Title	Week 3 11SENX Online Class
+Start Time	5/04/2026, 4:21:32 PM
+End Time	5/04/2026, 5:10:00 PM
+Meeting Id	abc123
+
+2. Participants
+Full Name	First Join	Last Leave	In-Meeting Duration	Email	Role	Participant ID (UPN)
+John Smith	5/04/2026, 4:22:00 PM	5/04/2026, 5:09:00 PM	0h 47m 0s	john@school.edu	Attendee	...
+
+3. In-Meeting Activities
+...
 ```
 
-## Resources
+The parser handles:
+- BOM detection and UTF-16 LE decoding
+- Section splitting by numbered headers
+- Australian date format (D/MM/YY or D/MM/YYYY)
+- Duration parsing ("Xh Xm Xs" -> minutes)
+- Tab-separated values
 
-- [Microsoft Graph API Documentation](https://learn.microsoft.com/en-us/graph/api/overview)
-- [Teams Meeting Attendance Reports](https://learn.microsoft.com/en-us/graph/api/meetingattendancereport-get)
-- [MSAL.js Documentation](https://github.com/AzureAD/microsoft-authentication-library-for-js)
-- [React TypeScript Cheatsheet](https://react-typescript-cheatsheet.netlify.app/)
+## Project Files
 
-## Conclusion
+### Backend Services
+| File | Purpose |
+|------|---------|
+| `teams-csv-parser.service.ts` | Parse native Teams CSV, extract class codes, import data |
+| `folder-watcher.service.ts` | Watch folder for new CSVs, trigger auto-import |
+| `canvas.service.ts` | Canvas API integration, roster sync, class amalgamation |
+| `csv-import.service.ts` | Generic CSV import (manual upload) |
+| `attendance.service.ts` | Attendance calculations and summaries |
 
-This architecture provides a scalable, maintainable solution for tracking Teams attendance. The TypeScript + React + Node.js stack offers excellent Microsoft integration while remaining flexible for future enhancements.
-
-Start with the MVP approach and iterate based on user feedback and requirements.
+### Frontend Pages
+| File | Purpose |
+|------|---------|
+| `Dashboard.tsx` | Stats cards, attendance pie chart, recent meetings |
+| `Classes.tsx` | Per-class attendance with expandable meetings and absence lists |
+| `Students.tsx` | Student list with class filter tabs |
+| `Meetings.tsx` | Meeting list with class filter |
+| `Reports.tsx` | Filtered attendance reports with CSV export |
+| `SyncPage.tsx` | Folder watcher controls, Canvas sync, manual upload |

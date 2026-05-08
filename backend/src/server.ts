@@ -10,6 +10,8 @@ import path from 'path';
 import studentsRoutes from './routes/students.routes';
 import meetingsRoutes from './routes/meetings.routes';
 import attendanceRoutes from './routes/attendance.routes';
+import watcherRoutes from './routes/watcher.routes';
+import canvasRoutes from './routes/canvas.routes';
 
 // Import middleware
 import { errorHandler, notFound } from './middleware/error.middleware';
@@ -19,6 +21,7 @@ import { optionalAuth } from './middleware/auth.middleware';
 import logger from './config/logger';
 import { getAuthUrl, acquireTokenByCode } from './config/auth';
 import { graphService } from './services/graph.service';
+import { folderWatcherService } from './services/folder-watcher.service';
 
 // Load environment variables
 dotenv.config();
@@ -119,6 +122,8 @@ app.get('/health', (req, res) => {
 app.use('/api/students', optionalAuth, studentsRoutes);
 app.use('/api/meetings', optionalAuth, meetingsRoutes);
 app.use('/api/attendance', optionalAuth, attendanceRoutes);
+app.use('/api/watcher', optionalAuth, watcherRoutes);
+app.use('/api/canvas', optionalAuth, canvasRoutes);
 
 // API documentation endpoint
 app.get('/api', (req, res) => {
@@ -148,21 +153,27 @@ app.use(errorHandler);
 // Start server
 const startServer = async () => {
   try {
-    // Option 1: No Graph service initialization required
-    logger.info('Starting server in CSV Import mode...');
+    logger.info('Starting server...');
 
-    app.listen(PORT, () => {
-      logger.info(`🚀 Server running on port ${PORT}`);
-      logger.info(`📊 Environment: ${process.env.NODE_ENV}`);
-      logger.info(`🔗 API: http://localhost:${PORT}/api`);
-      logger.info(`❤️  Health check: http://localhost:${PORT}/health`);
+    app.listen(PORT, async () => {
+      logger.info(`Server running on port ${PORT}`);
+      logger.info(`Environment: ${process.env.NODE_ENV}`);
+      logger.info(`API: http://localhost:${PORT}/api`);
+      logger.info(`Health check: http://localhost:${PORT}/health`);
 
-      if (process.env.NODE_ENV === 'development') {
-        logger.info('\n📝 Available endpoints:');
-        logger.info('  Students: http://localhost:${PORT}/api/students');
-        logger.info('  Meetings: http://localhost:${PORT}/api/meetings');
-        logger.info('  Attendance: http://localhost:${PORT}/api/attendance');
-        logger.info('  Auth Login: http://localhost:${PORT}/auth/login\n');
+      // Auto-start folder watcher if enabled
+      const watchEnabled = process.env.WATCH_ENABLED !== 'false';
+      if (watchEnabled) {
+        try {
+          await folderWatcherService.start();
+          const status = folderWatcherService.getStatus();
+          logger.info(`Folder watcher active. Watching: ${status.watchFolder}`);
+        } catch (watchError: any) {
+          logger.warn(`Folder watcher failed to start: ${watchError.message}`);
+          logger.warn('You can start it manually via POST /api/watcher/start');
+        }
+      } else {
+        logger.info('Folder watcher disabled (WATCH_ENABLED=false)');
       }
     });
   } catch (error) {

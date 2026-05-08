@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { StudentModel } from '../models/Student';
 import { attendanceService } from '../services/attendance.service';
+import { query as dbQuery } from '../config/database';
 import logger from '../config/logger';
 import { z } from 'zod';
 
@@ -15,7 +16,7 @@ const createStudentSchema = z.object({
 const updateStudentSchema = createStudentSchema.partial();
 
 /**
- * Get all students
+ * Get all students, optionally filtered by canvas class_code (exact match)
  */
 export const getAllStudents = async (
   req: Request,
@@ -23,14 +24,58 @@ export const getAllStudents = async (
   next: NextFunction
 ): Promise<void> => {
   try {
-    const students = await StudentModel.findAll();
-    res.json({
-      success: true,
-      data: students,
-      count: students.length,
-    });
+    const { class_code } = req.query;
+
+    if (class_code && typeof class_code === 'string') {
+      // Filter by exact canvas enrollment class code
+      const result = await dbQuery(
+        `SELECT DISTINCT s.*
+         FROM students s
+         JOIN canvas_enrollments ce ON ce.student_id = s.id
+         WHERE ce.class_code = $1
+         ORDER BY s.name`,
+        [class_code]
+      );
+      res.json({
+        success: true,
+        data: result.rows,
+        count: result.rows.length,
+      });
+    } else {
+      const students = await StudentModel.findAll();
+      res.json({
+        success: true,
+        data: students,
+        count: students.length,
+      });
+    }
   } catch (error) {
     logger.error('Error in getAllStudents:', error);
+    next(error);
+  }
+};
+
+/**
+ * Get individual canvas class codes (not amalgamated)
+ */
+export const getCanvasClassCodes = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const result = await dbQuery(
+      `SELECT class_code, COUNT(*) as student_count
+       FROM canvas_enrollments
+       GROUP BY class_code
+       ORDER BY class_code`
+    );
+    res.json({
+      success: true,
+      data: result.rows,
+    });
+  } catch (error) {
+    logger.error('Error in getCanvasClassCodes:', error);
     next(error);
   }
 };

@@ -33,8 +33,15 @@ class ApiService {
   }
 
   // Students
-  async getStudents(): Promise<Student[]> {
-    const response = await this.client.get<ApiResponse<Student[]>>('/students');
+  async getStudents(classCode?: string): Promise<Student[]> {
+    const response = await this.client.get<ApiResponse<Student[]>>('/students', {
+      params: classCode ? { class_code: classCode } : undefined,
+    });
+    return response.data.data;
+  }
+
+  async getStudentClassCodes(): Promise<Array<{ class_code: string; student_count: string }>> {
+    const response = await this.client.get<ApiResponse<Array<{ class_code: string; student_count: string }>>>('/students/class-codes');
     return response.data.data;
   }
 
@@ -105,6 +112,18 @@ class ApiService {
     return response.data.data;
   }
 
+  async getClassCodes(): Promise<string[]> {
+    const response = await this.client.get<ApiResponse<string[]>>('/meetings/classes');
+    return response.data.data;
+  }
+
+  async getMeetingsByClass(classCode: string): Promise<Meeting[]> {
+    const response = await this.client.get<ApiResponse<Meeting[]>>('/meetings', {
+      params: { class_code: classCode },
+    });
+    return response.data.data;
+  }
+
   async getMeetingAttendance(id: string): Promise<MeetingAttendanceSummary> {
     const response = await this.client.get<ApiResponse<MeetingAttendanceSummary>>(
       `/meetings/${id}/attendance`
@@ -158,6 +177,65 @@ class ApiService {
       responseType: 'blob',
     });
     return response.data;
+  }
+
+  // Folder Watcher
+  async getWatcherStatus(): Promise<any> {
+    const response = await this.client.get('/watcher/status');
+    return response.data.data;
+  }
+
+  async startWatcher(): Promise<any> {
+    const response = await this.client.post('/watcher/start');
+    return response.data;
+  }
+
+  async stopWatcher(): Promise<any> {
+    const response = await this.client.post('/watcher/stop');
+    return response.data;
+  }
+
+  async updateWatcherConfig(config: { watchFolder?: string; processedFolder?: string }): Promise<any> {
+    const response = await this.client.put('/watcher/config', config);
+    return response.data;
+  }
+
+  async getWatcherHistory(limit = 50): Promise<any[]> {
+    const response = await this.client.get('/watcher/history', {
+      params: { limit },
+    });
+    return response.data.data;
+  }
+
+  // Canvas Integration
+  async getCanvasStatus(): Promise<any> {
+    const response = await this.client.get('/canvas/status');
+    return response.data.data;
+  }
+
+  async getCanvasCourses(): Promise<any[]> {
+    const response = await this.client.get('/canvas/courses');
+    return response.data.data;
+  }
+
+  async syncCanvasRoster(courseId: number, classCode: string): Promise<any> {
+    const response = await this.client.post('/canvas/sync', { courseId, classCode });
+    return response.data;
+  }
+
+  async syncAllCanvasRosters(): Promise<any> {
+    const response = await this.client.post('/canvas/sync-all');
+    return response.data;
+  }
+
+  async getCanvasRoster(classCode: string): Promise<any[]> {
+    const response = await this.client.get(`/canvas/roster/${classCode}`);
+    return response.data.data;
+  }
+
+  async getMeetingAttendanceWithAbsences(meetingId: string): Promise<any> {
+    const response = await this.client.get(`/canvas/attendance/${meetingId}`);
+    return response.data.data;
   }
 
   // Auth

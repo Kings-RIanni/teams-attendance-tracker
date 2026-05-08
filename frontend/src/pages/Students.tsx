@@ -19,6 +19,8 @@ import {
   CircularProgress,
   Alert,
   Chip,
+  Tabs,
+  Tab,
 } from '@mui/material';
 import {
   Add as AddIcon,
@@ -29,8 +31,15 @@ import {
 import { apiService } from '../services/api';
 import { Student } from '../types';
 
+interface ClassCodeInfo {
+  class_code: string;
+  student_count: string;
+}
+
 const Students: React.FC = () => {
   const [students, setStudents] = useState<Student[]>([]);
+  const [classCodes, setClassCodes] = useState<ClassCodeInfo[]>([]);
+  const [selectedTab, setSelectedTab] = useState(0); // 0 = "All", 1+ = class codes
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [openDialog, setOpenDialog] = useState(false);
@@ -43,14 +52,28 @@ const Students: React.FC = () => {
   });
 
   useEffect(() => {
-    loadStudents();
+    loadClassCodes();
   }, []);
+
+  useEffect(() => {
+    loadStudents();
+  }, [selectedTab]);
+
+  const loadClassCodes = async () => {
+    try {
+      const codes = await apiService.getStudentClassCodes();
+      setClassCodes(codes);
+    } catch (err) {
+      // Non-critical
+    }
+  };
 
   const loadStudents = async () => {
     try {
       setLoading(true);
       setError(null);
-      const data = await apiService.getStudents();
+      const classCode = selectedTab > 0 ? classCodes[selectedTab - 1]?.class_code : undefined;
+      const data = await apiService.getStudents(classCode);
       setStudents(data);
     } catch (err: any) {
       setError(err.message || 'Failed to load students');
@@ -74,6 +97,11 @@ const Students: React.FC = () => {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleTabChange = (_event: React.SyntheticEvent, newValue: number) => {
+    setSelectedTab(newValue);
+    setSearchQuery('');
   };
 
   const handleOpenDialog = (student?: Student) => {
@@ -122,14 +150,6 @@ const Students: React.FC = () => {
     }
   };
 
-  if (loading && students.length === 0) {
-    return (
-      <Box display="flex" justifyContent="center" alignItems="center" minHeight="400px">
-        <CircularProgress />
-      </Box>
-    );
-  }
-
   return (
     <Box>
       <Box display="flex" justifyContent="space-between" alignItems="center" mb={3}>
@@ -156,9 +176,32 @@ const Students: React.FC = () => {
         </Alert>
       )}
 
+      {/* Class tabs */}
+      {classCodes.length > 0 && (
+        <Paper elevation={1} sx={{ mb: 3 }}>
+          <Tabs
+            value={selectedTab}
+            onChange={handleTabChange}
+            variant="scrollable"
+            scrollButtons="auto"
+            textColor="secondary"
+            indicatorColor="secondary"
+          >
+            <Tab label="All Students" />
+            {classCodes.map((cls) => (
+              <Tab
+                key={cls.class_code}
+                label={`${cls.class_code} (${cls.student_count})`}
+              />
+            ))}
+          </Tabs>
+        </Paper>
+      )}
+
       <Box display="flex" gap={2} mb={3}>
         <TextField
           fullWidth
+          size="small"
           placeholder="Search students by name, email, or ID..."
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
@@ -173,63 +216,61 @@ const Students: React.FC = () => {
         </Button>
       </Box>
 
-      <TableContainer component={Paper} elevation={2}>
-        <Table>
-          <TableHead>
-            <TableRow>
-              <TableCell><strong>Name</strong></TableCell>
-              <TableCell><strong>Email</strong></TableCell>
-              <TableCell><strong>Student ID</strong></TableCell>
-              <TableCell><strong>Azure AD ID</strong></TableCell>
-              <TableCell><strong>Actions</strong></TableCell>
-            </TableRow>
-          </TableHead>
-          <TableBody>
-            {students.length > 0 ? (
-              students.map((student) => (
-                <TableRow key={student.id} hover>
-                  <TableCell>{student.name}</TableCell>
-                  <TableCell>{student.email}</TableCell>
-                  <TableCell>
-                    {student.student_id || <Chip label="N/A" size="small" />}
-                  </TableCell>
-                  <TableCell>
-                    {student.azure_ad_id ? (
-                      <Chip label="Linked" color="success" size="small" />
-                    ) : (
-                      <Chip label="Not Linked" size="small" />
-                    )}
-                  </TableCell>
-                  <TableCell>
-                    <IconButton
-                      size="small"
-                      onClick={() => handleOpenDialog(student)}
-                      color="primary"
-                    >
-                      <EditIcon />
-                    </IconButton>
-                    <IconButton
-                      size="small"
-                      onClick={() => handleDelete(student.id)}
-                      color="error"
-                    >
-                      <DeleteIcon />
-                    </IconButton>
+      {loading ? (
+        <Box display="flex" justifyContent="center" alignItems="center" minHeight="200px">
+          <CircularProgress />
+        </Box>
+      ) : (
+        <TableContainer component={Paper} elevation={2}>
+          <Table>
+            <TableHead>
+              <TableRow>
+                <TableCell><strong>Name</strong></TableCell>
+                <TableCell><strong>Email</strong></TableCell>
+                <TableCell><strong>Student ID</strong></TableCell>
+                <TableCell><strong>Actions</strong></TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {students.length > 0 ? (
+                students.map((student) => (
+                  <TableRow key={student.id} hover>
+                    <TableCell>{student.name}</TableCell>
+                    <TableCell sx={{ fontSize: '0.85rem' }}>{student.email}</TableCell>
+                    <TableCell>
+                      {student.student_id || <Chip label="N/A" size="small" />}
+                    </TableCell>
+                    <TableCell>
+                      <IconButton
+                        size="small"
+                        onClick={() => handleOpenDialog(student)}
+                        color="primary"
+                      >
+                        <EditIcon />
+                      </IconButton>
+                      <IconButton
+                        size="small"
+                        onClick={() => handleDelete(student.id)}
+                        color="error"
+                      >
+                        <DeleteIcon />
+                      </IconButton>
+                    </TableCell>
+                  </TableRow>
+                ))
+              ) : (
+                <TableRow>
+                  <TableCell colSpan={4} align="center">
+                    <Typography color="textSecondary" py={4}>
+                      No students found.
+                    </Typography>
                   </TableCell>
                 </TableRow>
-              ))
-            ) : (
-              <TableRow>
-                <TableCell colSpan={5} align="center">
-                  <Typography color="textSecondary" py={4}>
-                    No students found. Add your first student to get started.
-                  </Typography>
-                </TableCell>
-              </TableRow>
-            )}
-          </TableBody>
-        </Table>
-      </TableContainer>
+              )}
+            </TableBody>
+          </Table>
+        </TableContainer>
+      )}
 
       <Dialog open={openDialog} onClose={handleCloseDialog} maxWidth="sm" fullWidth>
         <DialogTitle>

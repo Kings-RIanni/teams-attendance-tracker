@@ -5,6 +5,7 @@ import {
   getUpcomingMeetings,
   getRecentMeetings,
   getMeetingsByDateRange,
+  getClassCodes,
   createMeeting,
   getMeetingAttendance,
   syncMeetingAttendance,
@@ -33,6 +34,12 @@ router.get('/upcoming', getUpcomingMeetings);
  * @access  Private
  */
 router.get('/recent', getRecentMeetings);
+
+/**
+ * @route   GET /api/meetings/classes
+ * @desc    Get distinct class codes
+ */
+router.get('/classes', getClassCodes);
 
 /**
  * @route   GET /api/meetings/date-range

@@ -7,16 +7,24 @@ import {
   deleteStudent,
   searchStudents,
   getStudentAttendance,
+  getCanvasClassCodes,
 } from '../controllers/students.controller';
 
 const router = Router();
 
 /**
  * @route   GET /api/students
- * @desc    Get all students
+ * @desc    Get all students (optional ?class_code= filter)
  * @access  Private
  */
 router.get('/', getAllStudents);
+
+/**
+ * @route   GET /api/students/class-codes
+ * @desc    Get individual canvas class codes with student counts
+ * @access  Private
+ */
+router.get('/class-codes', getCanvasClassCodes);
 
 /**
  * @route   GET /api/students/search

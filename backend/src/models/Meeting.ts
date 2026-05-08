@@ -23,6 +23,21 @@ export class MeetingModel {
     return result.rows[0] || null;
   }
 
+  static async findByClassCode(classCode: string): Promise<Meeting[]> {
+    const result = await query(
+      'SELECT * FROM meetings WHERE class_code = $1 ORDER BY start_time DESC',
+      [classCode]
+    );
+    return result.rows;
+  }
+
+  static async getDistinctClassCodes(): Promise<string[]> {
+    const result = await query(
+      'SELECT DISTINCT class_code FROM meetings WHERE class_code IS NOT NULL ORDER BY class_code'
+    );
+    return result.rows.map((r: any) => r.class_code);
+  }
+
   static async findByDateRange(startDate: Date, endDate: Date): Promise<Meeting[]> {
     const result = await query(
       `SELECT * FROM meetings
@@ -43,8 +58,8 @@ export class MeetingModel {
 
   static async create(data: CreateMeetingDTO): Promise<Meeting> {
     const result = await query(
-      `INSERT INTO meetings (teams_meeting_id, title, start_time, end_time, organizer_email, meeting_url)
-       VALUES ($1, $2, $3, $4, $5, $6)
+      `INSERT INTO meetings (teams_meeting_id, title, start_time, end_time, organizer_email, meeting_url, class_code)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
        RETURNING *`,
       [
         data.teams_meeting_id,
@@ -52,7 +67,8 @@ export class MeetingModel {
         data.start_time,
         data.end_time,
         data.organizer_email,
-        data.meeting_url
+        data.meeting_url,
+        data.class_code
       ]
     );
     return result.rows[0];
@@ -82,6 +98,10 @@ export class MeetingModel {
     if (data.meeting_url !== undefined) {
       fields.push(`meeting_url = $${paramCount++}`);
       values.push(data.meeting_url);
+    }
+    if (data.class_code !== undefined) {
+      fields.push(`class_code = $${paramCount++}`);
+      values.push(data.class_code);
     }
 
     if (fields.length === 0) {

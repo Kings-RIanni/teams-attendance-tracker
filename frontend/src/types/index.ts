@@ -20,6 +20,7 @@ export interface Meeting {
   end_time: string;
   organizer_email?: string;
   meeting_url?: string;
+  class_code?: string;
   created_at: string;
 }
 

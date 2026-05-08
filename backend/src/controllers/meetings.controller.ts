@@ -20,7 +20,7 @@ const dateRangeSchema = z.object({
 });
 
 /**
- * Get all meetings
+ * Get all meetings (optionally filtered by class_code)
  */
 export const getAllMeetings = async (
   req: Request,
@@ -30,8 +30,14 @@ export const getAllMeetings = async (
   try {
     const limit = parseInt(req.query.limit as string) || 50;
     const offset = parseInt(req.query.offset as string) || 0;
+    const classCode = req.query.class_code as string | undefined;
 
-    const meetings = await MeetingModel.findAll(limit, offset);
+    let meetings;
+    if (classCode) {
+      meetings = await MeetingModel.findByClassCode(classCode);
+    } else {
+      meetings = await MeetingModel.findAll(limit, offset);
+    }
 
     res.json({
       success: true,
@@ -44,6 +50,26 @@ export const getAllMeetings = async (
     });
   } catch (error) {
     logger.error('Error in getAllMeetings:', error);
+    next(error);
+  }
+};
+
+/**
+ * Get distinct class codes
+ */
+export const getClassCodes = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const classCodes = await MeetingModel.getDistinctClassCodes();
+    res.json({
+      success: true,
+      data: classCodes,
+    });
+  } catch (error) {
+    logger.error('Error in getClassCodes:', error);
     next(error);
   }
 };
